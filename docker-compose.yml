@@ -1,0 +1,41 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag-chatbot-api
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - HOME=/home/appuser
+      - HF_HOME=/app/hf_cache
+      - HF_DATASETS_CACHE=/app/hf_cache
+    env_file:
+      - .env
+    volumes:
+      # Persist vector store data
+      - chroma_data:/app/chroma_db
+      # Cache HuggingFace models
+      - hf_cache:/app/hf_cache
+      - ./src:/app/src
+      - ./main.py:/app/main.py
+    # Required for host.docker.internal on Linux
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: host
+
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/status')" ]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  chroma_data:
+    name: rag-chroma-data
+  hf_cache:
+    name: rag-hf-cache

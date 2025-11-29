@@ -1,0 +1,19 @@
+# Python
+__pycache__
+.Python
+venv/
+.venv/
+env/
+.env
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local data (will be mounted as volumes)
+chroma_db/
+*.db
