@@ -7,6 +7,55 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
 
+class HistorySettings(BaseSettings):
+    """Conversation history management configuration."""
+    # Strategy: sliding_window, token_budget, summarization
+    strategy: str = Field(
+        default="sliding_window",
+        alias="HISTORY_STRATEGY",
+        description="History management strategy"
+    )
+
+    # Sliding window settings
+    max_messages: int = Field(
+        default=10,
+        ge=2,
+        le=100,
+        alias="HISTORY_MAX_MESSAGES"
+    )
+
+    # Token budget settings
+    max_tokens: int = Field(
+        default=4000,
+        ge=500,
+        le=32000,
+        alias="HISTORY_MAX_TOKENS"
+    )
+
+    # Summarization settings
+    summarize_after: int = Field(
+        default=8,
+        ge=4,
+        le=50,
+        alias="HISTORY_SUMMARIZE_AFTER",
+        description="Summarize messages older than this count"
+    )
+    summary_max_tokens: int = Field(
+        default=500,
+        ge=100,
+        le=2000,
+        alias="HISTORY_SUMMARY_MAX_TOKENS"
+    )
+
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+
 class OllamaSettings(BaseSettings):
     """Ollama LLM configuration."""
     model: str = Field(default="llama3.2", alias="OLLAMA_MODEL")
@@ -95,6 +144,7 @@ class Settings(BaseSettings):
     embedding: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
     rag: RAGSettings = Field(default_factory=RAGSettings)
     api: APISettings = Field(default_factory=APISettings)
+    history: HistorySettings = Field(default_factory=HistorySettings)
     env: str = Field(default='dev', alias="ENV")
     workers: int = Field(default=1, alias="WORKERS")
 

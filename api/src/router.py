@@ -1,18 +1,41 @@
 import traceback
 from fastapi import APIRouter, HTTPException
 import uuid
-from src.schemas import StatusResponse, ChatRequest, ChatResponse, ConfigResponse, HistoryResponse, SessionListResponse
+from src.schemas import (
+    SessionInfo,
+    StatusResponse,
+    ChatRequest,
+    ChatResponse,
+    ConfigResponse,
+    HistoryResponse,
+    SessionListResponse,
+    Citation,
+    MessageResponse
+)
 from src.graph import get_chatbot
 from src.config import settings
+from src.ingest import run_ingestion
+from src.history_manager import HistoryConfig
 
 router = APIRouter(prefix="", tags=["default"])
+
+history_config = HistoryConfig(
+    max_messages=settings.history.max_messages,
+    max_tokens=settings.history.max_tokens,
+    model_name=settings.ollama.model,
+    summarize_after=settings.history.summarize_after,
+    summary_max_tokens=settings.history.summary_max_tokens
+)
 
 
 @router.get("/status", response_model=StatusResponse)
 async def get_status():
     """Check API and component status."""
     try:
-        bot = get_chatbot()
+        _ = get_chatbot(
+            history_strategy=settings.history.strategy,
+            history_config=history_config
+        )
         return StatusResponse(
             status="online",
             model=settings.ollama.model,
@@ -29,11 +52,15 @@ async def get_status():
 async def get_all_sessions():
     """Get all active chat sessions."""
     try:
-        bot = get_chatbot()
+
+        bot = get_chatbot(
+            history_strategy=settings.history.strategy,
+            history_config=history_config
+        )
         sessions = bot.get_all_sessions()
         return SessionListResponse(
             total_sessions=len(sessions),
-            sessions=sessions
+            sessions=[SessionInfo(**s) for s in sessions]
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -47,7 +74,10 @@ async def get_config():
         ollama_base_url=settings.ollama.base_url,
         chroma_collection=settings.chroma.collection_name,
         embedding_model=settings.embedding.model_name,
-        retrieval_k=settings.rag.retrieval_k
+        retrieval_k=settings.rag.retrieval_k,
+        history_strategy=getattr(
+            settings.history, 'strategy', 'sliding_window'),
+        history_max_messages=getattr(settings.history, 'max_messages', 6),
     )
 
 
@@ -55,15 +85,25 @@ async def get_config():
 async def chat(request: ChatRequest):
     """Send a message and get a response."""
     try:
-        bot = get_chatbot()
+        bot = get_chatbot(
+            history_strategy=settings.history.strategy,
+            history_config=history_config
+        )
 
         # Generate session ID if not provided
         session_id = request.session_id or str(uuid.uuid4())
 
         # Get response from chatbot
-        response = bot.chat(session_id, request.message)
+        result = bot.chat(session_id, request.message)
+        citations = [
+            Citation(**cite) for cite in result.get("citations", [])
+        ]
 
-        return ChatResponse(response=response, session_id=session_id)
+        return ChatResponse(
+            response=result["response"],
+            session_id=session_id,
+            citations=citations
+        )
 
     except Exception as e:
         print(traceback.format_exc())
@@ -74,18 +114,43 @@ async def chat(request: ChatRequest):
 async def get_history(session_id: str):
     """Get conversation history for a session."""
     try:
-        bot = get_chatbot()
+        bot = get_chatbot(
+            history_strategy=settings.history.strategy,
+            history_config=history_config
+        )
         history = bot.get_history(session_id)
+        messages = []
+        for msg in history:
+            message = MessageResponse(
+                role=msg["role"],
+                content=msg["content"],
+                timestamp=msg.get("timestamp"),
+                citations=[Citation(
+                    **c) for c in msg.get("citations", [])] if msg.get("citations") else None
+            )
+            messages.append(message)
         return HistoryResponse(session_id=session_id, messages=history)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/ingest")
+async def ingest_documents():
+    """
+    Ingest the documents
+    """
+    resp = run_ingestion()
+    return resp
 
 
 @router.delete("/session/{session_id}")
 async def clear_session(session_id: str):
     """Clear conversation history for a session."""
     try:
-        bot = get_chatbot()
+        bot = get_chatbot(
+            history_strategy=settings.history.strategy,
+            history_config=history_config
+        )
         bot.clear_session(session_id)
         return {"message": f"Session {session_id} cleared"}
     except Exception as e:

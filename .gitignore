@@ -17,3 +17,4 @@ build/
 # Local data (will be mounted as volumes)
 chroma_db/
 *.db
+*test.py

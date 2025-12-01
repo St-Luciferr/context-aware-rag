@@ -3,6 +3,7 @@ Document Ingestion Script
 Loads Wikipedia pages and stores embeddings in ChromaDB
 """
 
+import traceback
 import wikipedia
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_community.vectorstores import Chroma
@@ -98,6 +99,28 @@ def create_vector_store(documents: list[dict], embeddings: HuggingFaceEmbeddings
     return vector_store
 
 
+def run_ingestion():
+    try:
+        print(f"\nLoading embedding model: {settings.embedding.model_name}")
+        embeddings = get_embeddings()
+        print("\n[1/2] Fetching Wikipedia content...")
+        print(f"Topics: {settings.wiki_topics}")
+        documents = fetch_wikipedia_content(settings.wiki_topics)
+        print(f"Fetched {len(documents)} documents")
+        print("\n[2/2] Creating vector store with semantic chunking...")
+        _ = create_vector_store(documents, embeddings)
+        return {
+            "status": "success",
+            "message": "vector index initialized Successfully"
+        }
+    except Exception as e:
+        print(traceback.format_exc())
+        return {
+            "status": "errror",
+            "message": str(e)
+        }
+
+
 def main():
     print("=" * 50)
     print("Document Ingestion Pipeline (Semantic Chunking)")
@@ -121,10 +144,11 @@ def main():
     print("\n" + "=" * 50)
     print("Testing retrieval...")
     test_query = "What is machine learning?"
-    results = vector_store.similarity_search(test_query, k=settings.rag.retrieval_k)
+    results = vector_store.similarity_search(
+        test_query, k=settings.rag.retrieval_k)
     print(f"Query: '{test_query}'")
     print(f"Found {len(results)} relevant chunks (k={settings.rag.retrieval_k})")
-    
+
     for i, doc in enumerate(results):
         title = doc.metadata.get('title', 'Unknown')
         chunk_id = doc.metadata.get('chunk_id', '?')
@@ -132,6 +156,9 @@ def main():
         print(doc.page_content[:300] + "...")
 
     print("\nIngestion complete!")
+    return {
+        "status": "Complete"
+    }
 
 
 if __name__ == "__main__":

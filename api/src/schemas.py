@@ -4,6 +4,26 @@ from typing import Optional
 from datetime import datetime
 
 
+class Citation(BaseModel):
+    """Citation information from retrieved documents."""
+    number: int
+    title: str
+    display: str
+    source_type: str
+    content_preview: str
+    url: Optional[str] = None
+    page: Optional[int] = None
+    chunk_id: Optional[int] = None
+
+
+class MessageResponse(BaseModel):
+    """Individual message in history."""
+    role: str
+    content: str
+    timestamp: Optional[str] = None
+    citations: Optional[list[Citation]] = None
+
+
 class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
@@ -12,6 +32,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     session_id: str
+    citations: list[Citation] = []
 
 
 class HistoryResponse(BaseModel):
@@ -22,7 +43,7 @@ class HistoryResponse(BaseModel):
 class StatusResponse(BaseModel):
     status: str
     model: str
-    llm_url:str
+    llm_url: str
     vector_store: str
     collection: str
 
@@ -33,6 +54,8 @@ class ConfigResponse(BaseModel):
     chroma_collection: str
     embedding_model: str
     retrieval_k: int
+    history_strategy: str
+    history_max_messages: int
 
 
 class SessionInfo(BaseModel):

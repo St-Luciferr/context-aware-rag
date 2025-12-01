@@ -22,6 +22,7 @@ services:
       - ./api/src:/home/appuser/app/src
   
       - ./api/main.py:/home/appuser/app/main.py
+      - ./api/data:/home/appuser/app/data
     # Required for host.docker.internal on Linux
     extra_hosts:
       - "host.docker.internal:host-gateway"
