@@ -16,6 +16,14 @@ export default function Home() {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Auto-dismiss errors after 5 seconds
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
+
   // Fetch status
   useEffect(() => {
     const fetchStatus = async () => {
@@ -25,12 +33,17 @@ export default function Home() {
         setError(null);
       } catch (err) {
         console.error('Failed to fetch status:', err);
-        setStatus({ status: 'offline', model: 'Unknown', vector_store: '', collection: '' });
+        setStatus({
+          status: 'offline',
+          model: 'Unknown',
+          vector_store: '',
+          collection: '',
+        });
       }
     };
 
     fetchStatus();
-    const interval = setInterval(fetchStatus, 30000);
+    const interval = setInterval(fetchStatus, 300000);
     return () => clearInterval(interval);
   }, []);
 
@@ -61,7 +74,14 @@ export default function Home() {
       setIsLoadingMessages(true);
       try {
         const data = await api.getHistory(activeSessionId);
-        setMessages(data.messages);
+        // Map messages with proper typing
+        const formattedMessages: Message[] = data.messages.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+          timestamp: msg.timestamp,
+          citations: msg.citations,
+        }));
+        setMessages(formattedMessages);
       } catch (err) {
         console.error('Failed to fetch messages:', err);
         setMessages([]);
@@ -123,8 +143,12 @@ export default function Home() {
       }
     }
 
-    // Optimistically add user message
-    const userMessage: Message = { role: 'user', content };
+    // Optimistically add user message with timestamp
+    const userMessage: Message = {
+      role: 'user',
+      content,
+      timestamp: new Date().toISOString(),
+    };
     setMessages((prev) => [...prev, userMessage]);
     setIsSending(true);
 
@@ -134,10 +158,12 @@ export default function Home() {
         session_id: currentSessionId,
       });
 
-      // Add assistant message
+      // Add assistant message with citations
       const assistantMessage: Message = {
         role: 'assistant',
         content: data.response,
+        timestamp: new Date().toISOString(),
+        citations: data.citations,
       };
       setMessages((prev) => [...prev, assistantMessage]);
 
@@ -161,15 +187,17 @@ export default function Home() {
     <div className="flex h-screen bg-dark-950 text-white">
       {/* Error toast */}
       {error && (
-        <div className="fixed top-4 right-4 z-50 bg-red-500/90 text-white px-4 py-3 rounded-lg shadow-lg animate-fade-in">
-          <div className="flex items-center gap-3">
-            <span>{error}</span>
-            <button
-              onClick={() => setError(null)}
-              className="text-white/80 hover:text-white"
-            >
-              ✕
-            </button>
+        <div className="fixed top-4 right-4 z-50 max-w-md animate-fade-in">
+          <div className="bg-red-500/90 backdrop-blur-sm text-white px-4 py-3 rounded-lg shadow-lg border border-red-400/20">
+            <div className="flex items-center gap-3">
+              <span className="flex-1">{error}</span>
+              <button
+                onClick={() => setError(null)}
+                className="text-white/80 hover:text-white text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
           </div>
         </div>
       )}

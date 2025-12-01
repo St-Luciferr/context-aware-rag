@@ -17,16 +17,15 @@ from langchain_core.documents import Document
 from langchain_community.retrievers import BM25Retriever
 from langchain_classic.retrievers import EnsembleRetriever
 
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import field, dataclass
 from src.config import settings
 from src.chat_storage import ChatStorage
-
+import time
 from src.history_manager import (
     HistoryStrategy,
     HistoryConfig,
-    create_history_manager,
-    SlidingWindowStrategy,
+    create_history_manager
 )
 
 import logging
@@ -53,7 +52,7 @@ class SessionMetadata:
 
     def update(self):
         """Update last message timestamp."""
-        self.last_message_at = datetime.now()
+        self.last_message_at = datetime.now(timezone.utc)
 
 
 class RAGChatbot:
@@ -122,7 +121,7 @@ class RAGChatbot:
             embedding_function=self.embeddings
         )
 
-    def _init_bm25_retriever(self, k: int = 5) -> BM25Retriever:
+    def _init_bm25_retriever(self, k: int = settings.rag.retrieval_k) -> BM25Retriever:
         """Initialize BM25 retriever once with all documents."""
         # Get all documents from ChromaDB once
         raw_docs = self.vector_store.get(include=["documents", "metadatas"])
@@ -136,7 +135,7 @@ class RAGChatbot:
         # BM25Retriever
         return BM25Retriever.from_documents(documents=documents, k=k)
 
-    def _init_ensemble_retriever(self, k: int = 5) -> EnsembleRetriever:
+    def _init_ensemble_retriever(self, k: int = settings.rag.retrieval_k) -> EnsembleRetriever:
         """Initialize ensemble retriever combining vector and BM25 search."""
         # Create vector search retriever
         similarity_retriever = self.vector_store.as_retriever(
@@ -163,7 +162,8 @@ class RAGChatbot:
             List of relevant documents
         """
         # If k is different from initialization, recreate retriever
-        if k != 5:
+        if k != settings.rag.retrieval_k:
+            print(f"Recreating Ensemble: K = {k}")
             similarity_retriever = self.vector_store.as_retriever(
                 search_type="similarity",
                 search_kwargs={'k': k}
@@ -174,10 +174,10 @@ class RAGChatbot:
                 retrievers=[similarity_retriever, self.bm25_retriever],
                 weights=[0.5, 0.5]
             )
-            return ensemble_retriever.invoke(query)
-
+            docs = ensemble_retriever.invoke(query)
+        docs = self.ensemble_retriever.invoke(query)
         # Use pre-initialized retriever for default k
-        return self.ensemble_retriever.invoke(query)
+        return docs
 
     def refresh_bm25_index(self):
         """
@@ -323,12 +323,13 @@ class RAGChatbot:
         full_history = self._load_history_as_messages(session_id)
         human_msg = HumanMessage(content=user_message)
         full_history.append(human_msg)
-
+        print("Optimizing the history")
+        start_time = time.time()
         optimized_history = self.history_manager.filter_history(
             messages=full_history,
             current_query=user_message
         )
-
+        print(f"Optimization Complete in {time.time()-start_time} Seconds")
         # Prepare initial state
         initial_state: ChatState = {
             "messages": optimized_history,
@@ -338,7 +339,10 @@ class RAGChatbot:
         }
 
         # Run the graph
+        print("Generating Response")
+        start_time = time.time()
         result = self.graph.invoke(initial_state)
+        print(f"Generation Complete in {time.time()-start_time} Seconds")
 
         # Extract AI response
         ai_messages = [m for m in result["messages"]

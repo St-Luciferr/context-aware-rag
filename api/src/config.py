@@ -100,7 +100,7 @@ class EmbeddingSettings(BaseSettings):
 
 class RAGSettings(BaseSettings):
     """RAG pipeline configuration."""
-    retrieval_k: int = Field(default=3, ge=1, le=20, alias="RAG_RETRIEVAL_K")
+    retrieval_k: int = Field(default=5, ge=1, le=20, alias="RAG_RETRIEVAL_K")
     # Semantic chunker settings
     breakpoint_threshold_type: str = Field(
         default="percentile",

@@ -20,20 +20,30 @@ async function fetchApi<T>(
     endpoint: string,
     options?: RequestInit
 ): Promise<T> {
-    const res = await fetch(`${API_BASE}${endpoint}`, {
-        ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            ...options?.headers,
-        },
-    });
+    const url = `${API_BASE}${endpoint}`;
 
-    if (!res.ok) {
-        const error = await res.json().catch(() => ({ detail: 'Unknown error' }));
-        throw new ApiError(res.status, error.detail || 'Request failed');
+    try {
+        const res = await fetch(url, {
+            ...options,
+            headers: {
+                'Content-Type': 'application/json',
+                ...options?.headers,
+            },
+        });
+
+        if (!res.ok) {
+            const error = await res.json().catch(() => ({ detail: 'Unknown error' }));
+            throw new ApiError(res.status, error.detail || `Request failed: ${res.status}`);
+        }
+
+        return res.json();
+    } catch (err) {
+        if (err instanceof ApiError) {
+            throw err;
+        }
+        // Network error or other fetch failure
+        throw new ApiError(0, 'Failed to connect to server. Please check if the API is running.');
     }
-
-    return res.json();
 }
 
 export const api = {

@@ -2,7 +2,7 @@
 
 import sqlite3
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import os
 
@@ -71,7 +71,7 @@ class ChatStorage:
 
     def create_session(self, session_id: str):
         """Create a new session."""
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -82,7 +82,7 @@ class ChatStorage:
 
     def update_session(self, session_id: str):
         """Update session's last message timestamp."""
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -92,7 +92,7 @@ class ChatStorage:
 
     def save_message(self, session_id: str, role: str, content: str, citations: list[dict] = None):
         """Save a message to the database."""
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         citations_json = json.dumps(citations) if citations else None
 
         with sqlite3.connect(self.db_path) as conn:
