@@ -1,7 +1,7 @@
 services:
   api:
     build:
-      context: .
+      context: ./api
       dockerfile: Dockerfile
     container_name: rag-chatbot-api
     ports:
@@ -10,17 +10,18 @@ services:
       - API_HOST=0.0.0.0
       - API_PORT=8000
       - HOME=/home/appuser
-      - HF_HOME=/app/hf_cache
-      - HF_DATASETS_CACHE=/app/hf_cache
+      - HF_HOME=/home/appuser/app/hf_cache
+      - HF_DATASETS_CACHE=/home/appuser/app/hf_cache
     env_file:
-      - .env
+      - ./api/.env
     volumes:
       # Persist vector store data
-      - chroma_data:/app/chroma_db
+      - chroma_data:/home/appuser/app/chroma_db
       # Cache HuggingFace models
-      - hf_cache:/app/hf_cache
-      - ./src:/app/src
-      - ./main.py:/app/main.py
+      - hf_cache:/home/appuser/app/hf_cache
+      - ./api/src:/home/appuser/app/src
+  
+      - ./api/main.py:/home/appuser/app/main.py
     # Required for host.docker.internal on Linux
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -33,6 +34,20 @@ services:
       timeout: 10s
       start_period: 10s
       retries: 3
+  
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
+    container_name: rag-chatbot-web
+    ports:
+      - "3000:3000"
+
+    depends_on:
+      - api
+    restart: unless-stopped
 
 volumes:
   chroma_data:
