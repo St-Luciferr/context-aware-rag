@@ -190,6 +190,7 @@ class RAGChatbot:
     def _retrieve_context(self, state: ChatState) -> ChatState:
         """Retrieve relevant context using hybrid search with citation tracking."""
         query = state["current_query"]
+        start_time = time.time()
         docs = self.hybrid_search(query, k=settings.rag.retrieval_k)
 
         if not docs:
@@ -243,6 +244,8 @@ class RAGChatbot:
 
         context = "\n\n".join(context_parts)
 
+        print(f"Context Retrieved in {time.time()-start_time} Seconds")
+
         return {
             "context": context,
             "citations": citations,
@@ -252,6 +255,7 @@ class RAGChatbot:
 
     def _generate_response(self, state: ChatState) -> ChatState:
         """Generate response using LLM with retrieved context and citations."""
+        start_time = time.time()
         context = state.get("context", "")
         citations = state.get("citations", [])
         query = state.get("current_query", "")
@@ -280,6 +284,7 @@ class RAGChatbot:
             failure_content = (
                 "I'm sorry — I couldn't generate a response due to an internal error."
             )
+            print(f"Generation Complete in {time.time()-start_time} Seconds")
             return {
                 "messages": [AIMessage(content=failure_content)],
                 "context": context,
@@ -290,7 +295,7 @@ class RAGChatbot:
         resp_text = getattr(response, "content", str(response)) or ""
         final_content = resp_text.strip()
         response_message = AIMessage(content=final_content)
-
+        print(f"Generation Complete in {time.time()-start_time} Seconds")
         return {
             "messages": [response_message],
             "context": context,
