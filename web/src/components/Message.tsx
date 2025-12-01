@@ -131,22 +131,214 @@ export default function Message({ message, showTimestamp = true }: MessageProps)
         }
     };
 
-    // Parse content to highlight citation references [1], [2], etc.
-    const renderContent = (content: string) => {
-        const parts = content.split(/(\[\d+\])/g);
-        return parts.map((part, index) => {
-            if (/^\[\d+\]$/.test(part)) {
-                return (
+    // Parse inline markdown (bold, italic, code, links, citations)
+    const parseInline = (text: string) => {
+        const elements: (string | JSX.Element)[] = [];
+        let remaining = text;
+        let key = 0;
+
+        while (remaining.length > 0) {
+            // Citations [1], [2], etc.
+            const citationMatch = remaining.match(/^\[(\d+)\]/);
+            if (citationMatch) {
+                elements.push(
                     <span
-                        key={index}
+                        key={key++}
                         className="inline-flex items-center justify-center px-1.5 py-0.5 mx-0.5 text-xs font-medium bg-primary-600/20 text-primary-400 rounded"
                     >
-                        {part}
+                        {citationMatch[0]}
                     </span>
                 );
+                remaining = remaining.substring(citationMatch[0].length);
+                continue;
             }
-            return part;
-        });
+
+            // Links [text](url)
+            const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/);
+            if (linkMatch) {
+                elements.push(
+                    <a
+                        key={key++}
+                        href={linkMatch[2]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary-400 hover:text-primary-300 underline"
+                    >
+                        {linkMatch[1]}
+                    </a>
+                );
+                remaining = remaining.substring(linkMatch[0].length);
+                continue;
+            }
+
+            // Inline code `code`
+            const codeMatch = remaining.match(/^`([^`]+)`/);
+            if (codeMatch) {
+                elements.push(
+                    <code key={key++} className="px-1.5 py-0.5 bg-dark-700 rounded text-xs font-mono">
+                        {codeMatch[1]}
+                    </code>
+                );
+                remaining = remaining.substring(codeMatch[0].length);
+                continue;
+            }
+
+            // Bold **text** or __text__
+            const boldMatch = remaining.match(/^(\*\*|__)(.+?)\1/);
+            if (boldMatch) {
+                elements.push(
+                    <strong key={key++} className="font-semibold">
+                        {boldMatch[2]}
+                    </strong>
+                );
+                remaining = remaining.substring(boldMatch[0].length);
+                continue;
+            }
+
+            // Italic *text* or _text_ (single)
+            const italicMatch = remaining.match(/^(\*|_)(.+?)\1/);
+            if (italicMatch) {
+                elements.push(
+                    <em key={key++} className="italic">
+                        {italicMatch[2]}
+                    </em>
+                );
+                remaining = remaining.substring(italicMatch[0].length);
+                continue;
+            }
+
+            // Regular text
+            const nextSpecial = remaining.search(/[\[\*_`]/);
+            if (nextSpecial === -1) {
+                elements.push(remaining);
+                break;
+            }
+            elements.push(remaining.substring(0, nextSpecial));
+            remaining = remaining.substring(nextSpecial);
+        }
+
+        return elements;
+    };
+
+    // Custom markdown renderer with citation support
+    const renderContent = (content: string) => {
+        const lines = content.split('\n');
+        const elements: JSX.Element[] = [];
+        let i = 0;
+
+        while (i < lines.length) {
+            const line = lines[i];
+
+            // Code blocks
+            if (line.trim().startsWith('```')) {
+                const codeLines: string[] = [];
+                const language = line.trim().substring(3).trim();
+                i++;
+                while (i < lines.length && !lines[i].trim().startsWith('```')) {
+                    codeLines.push(lines[i]);
+                    i++;
+                }
+                elements.push(
+                    <pre key={i} className="bg-dark-700 rounded p-3 my-2 overflow-x-auto">
+                        <code className="text-xs font-mono">{codeLines.join('\n')}</code>
+                    </pre>
+                );
+                i++;
+                continue;
+            }
+
+            // Headers
+            if (line.startsWith('### ')) {
+                elements.push(
+                    <h3 key={i} className="text-base font-bold mt-2 mb-1">
+                        {parseInline(line.substring(4))}
+                    </h3>
+                );
+                i++;
+                continue;
+            }
+            if (line.startsWith('## ')) {
+                elements.push(
+                    <h2 key={i} className="text-lg font-bold mt-3 mb-2">
+                        {parseInline(line.substring(3))}
+                    </h2>
+                );
+                i++;
+                continue;
+            }
+            if (line.startsWith('# ')) {
+                elements.push(
+                    <h1 key={i} className="text-xl font-bold mt-4 mb-2">
+                        {parseInline(line.substring(2))}
+                    </h1>
+                );
+                i++;
+                continue;
+            }
+
+            // Blockquotes
+            if (line.startsWith('> ')) {
+                elements.push(
+                    <blockquote key={i} className="border-l-2 border-dark-600 pl-3 my-2 italic">
+                        {parseInline(line.substring(2))}
+                    </blockquote>
+                );
+                i++;
+                continue;
+            }
+
+            // Unordered lists
+            if (line.match(/^[\s]*[-*+]\s/)) {
+                const listItems: JSX.Element[] = [];
+                while (i < lines.length && lines[i].match(/^[\s]*[-*+]\s/)) {
+                    const match = lines[i].match(/^[\s]*[-*+]\s(.+)$/);
+                    if (match) {
+                        listItems.push(<li key={i}>{parseInline(match[1])}</li>);
+                    }
+                    i++;
+                }
+                elements.push(
+                    <ul key={i} className="list-disc list-inside my-2 space-y-1">
+                        {listItems}
+                    </ul>
+                );
+                continue;
+            }
+
+            // Ordered lists
+            if (line.match(/^[\s]*\d+\.\s/)) {
+                const listItems: JSX.Element[] = [];
+                while (i < lines.length && lines[i].match(/^[\s]*\d+\.\s/)) {
+                    const match = lines[i].match(/^[\s]*\d+\.\s(.+)$/);
+                    if (match) {
+                        listItems.push(<li key={i}>{parseInline(match[1])}</li>);
+                    }
+                    i++;
+                }
+                elements.push(
+                    <ol key={i} className="list-decimal list-inside my-2 space-y-1">
+                        {listItems}
+                    </ol>
+                );
+                continue;
+            }
+
+            // Empty lines
+            if (line.trim() === '') {
+                i++;
+                continue;
+            }
+
+            // Regular paragraphs
+            elements.push(
+                <p key={i} className="mb-2 last:mb-0">
+                    {parseInline(line)}
+                </p>
+            );
+            i++;
+        }
+
+        return <div>{elements}</div>;
     };
 
     return (
@@ -176,9 +368,13 @@ export default function Message({ message, showTimestamp = true }: MessageProps)
                             : 'bg-dark-800 rounded-tl-sm'
                     )}
                 >
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                        {isUser ? message.content : renderContent(message.content)}
-                    </p>
+                    <div className="text-sm leading-relaxed">
+                        {isUser ? (
+                            <span className="whitespace-pre-wrap">{message.content}</span>
+                        ) : (
+                            renderContent(message.content)
+                        )}
+                    </div>
                 </div>
 
                 {/* Citations for assistant messages */}
