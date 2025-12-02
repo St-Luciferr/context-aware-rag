@@ -10,8 +10,14 @@ from src.schemas import (
     HistoryResponse,
     SessionListResponse,
     Citation,
-    MessageResponse
+    MessageResponse,
+    StrategiesResponse,
+    ChangeStrategyRequest,
+    ChangeStrategyResponse
 )
+
+from src.schemas import STRATEGY_INFO
+
 from src.graph import get_chatbot
 from src.config import settings
 from src.ingest import run_ingestion
@@ -161,3 +167,45 @@ async def clear_session(session_id: str):
 async def new_session():
     """Create a new chat session."""
     return {"session_id": str(uuid.uuid4())}
+
+
+@router.get("/api/strategies", response_model=StrategiesResponse)
+async def get_strategies():
+    """Get available history management strategies."""
+    try:
+        bot = get_chatbot(
+            history_strategy=settings.history.strategy,
+            history_config=history_config
+        )
+        current_id = bot.get_current_strategy()
+
+        return StrategiesResponse(
+            current=current_id,
+            strategies=list(STRATEGY_INFO.values())
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/strategies", response_model=ChangeStrategyResponse)
+async def change_strategy(request: ChangeStrategyRequest):
+    """Change the history management strategy."""
+    try:
+        if request.strategy not in STRATEGY_INFO:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid strategy. Choose from: {list(STRATEGY_INFO.keys())}"
+            )
+
+        bot = get_chatbot()
+        bot.set_history_strategy(request.strategy)
+
+        return ChangeStrategyResponse(
+            success=True,
+            current_strategy=request.strategy,
+            message=f"Strategy changed to {STRATEGY_INFO[request.strategy].name}"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

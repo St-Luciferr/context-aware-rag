@@ -27,13 +27,12 @@ class HistoryConfig:
     max_messages: int = 6
 
     # Token budget
-    max_tokens: int = 4000
+    max_tokens: int = 4096
     model_name: str = "gpt-3.5-turbo"  # For token counting
 
     # Summarization
     summarize_after: int = 6  # Summarize messages older than this
     summary_max_tokens: int = 500
-
 
 
 class HistoryStrategy(ABC):

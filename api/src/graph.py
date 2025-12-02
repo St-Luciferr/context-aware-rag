@@ -413,6 +413,34 @@ class RAGChatbot:
         else:
             return f"[{citation['number']}] {citation['title']}"
 
+    def set_history_strategy(self, strategy: str) -> None:
+        """Change the history management strategy at runtime."""
+        valid_strategies = ["sliding_window", "token_budget", "summarization"]
+        if strategy not in valid_strategies:
+            raise ValueError(
+                f"Invalid strategy: {strategy}. Choose from {valid_strategies}")
+
+        self.history_manager = create_history_manager(
+            strategy=strategy,
+            llm=self.llm,
+            embeddings=self.embeddings,
+            config=self.history_config
+        )
+        logger.info(f"History strategy changed to: {strategy}")
+
+    def get_current_strategy(self) -> str:
+        """Get the current history strategy name."""
+        class_name = self.history_manager.__class__.__name__
+        # Map class names to strategy IDs
+        mapping = {
+            "SlidingWindowStrategy": "sliding_window",
+            "TokenBudgetStrategy": "token_budget",
+            "SummarizationStrategy": "summarization",
+            "SemanticFilterStrategy": "semantic",
+            "HybridStrategy": "hybrid",
+        }
+        return mapping.get(class_name, "sliding_window")
+
     @property
     def model_name(self) -> str:
         """Get the current model name."""
