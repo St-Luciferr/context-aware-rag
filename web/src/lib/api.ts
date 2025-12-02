@@ -5,6 +5,9 @@ import type {
     SessionListResponse,
     StatusResponse,
     ConfigResponse,
+    StrategiesResponse,
+    ChangeStrategyRequest,
+    ChangeStrategyResponse,
 } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -69,6 +72,15 @@ export const api = {
     // Chat
     sendMessage: (data: ChatRequest) =>
         fetchApi<ChatResponse>('/api/v1/chat', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    // History Strategies
+    getStrategies: () => fetchApi<StrategiesResponse>('/api/v1/strategies'),
+
+    changeStrategy: (data: ChangeStrategyRequest) =>
+        fetchApi<ChangeStrategyResponse>('/api/v1/strategies', {
             method: 'POST',
             body: JSON.stringify(data),
         }),

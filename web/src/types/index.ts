@@ -1,3 +1,5 @@
+// Types for the RAG Chatbot API
+
 export interface Citation {
     number: number;
     title: string;
@@ -8,6 +10,7 @@ export interface Citation {
     page?: number;
     chunk_id?: number;
 }
+
 export interface Message {
     role: 'user' | 'assistant';
     content: string;
@@ -38,6 +41,7 @@ export interface ChatResponse {
     session_id: string;
     citations: Citation[];
 }
+
 export interface HistoryResponse {
     session_id: string;
     messages: Message[];
@@ -58,4 +62,27 @@ export interface ConfigResponse {
     retrieval_k: number;
     history_strategy?: string;
     history_max_messages?: number;
+}
+
+// History Strategy Types
+export interface StrategyInfo {
+    id: string;
+    name: string;
+    description: string;
+    settings: Record<string, number>;
+}
+
+export interface StrategiesResponse {
+    current: string;
+    strategies: StrategyInfo[];
+}
+
+export interface ChangeStrategyRequest {
+    strategy: string;
+}
+
+export interface ChangeStrategyResponse {
+    success: boolean;
+    current_strategy: string;
+    message: string;
 }

@@ -4,12 +4,14 @@ import { useState, useRef, useEffect } from 'react';
 import { Send, Loader2, Bot, Sparkles, Lightbulb } from 'lucide-react';
 import clsx from 'clsx';
 import Message from './Message';
+import StrategyBadge from './StrategyBadge';
 import type { Message as MessageType } from '@/types';
 
 interface ChatAreaProps {
     messages: MessageType[];
     isLoading: boolean;
     onSendMessage: (message: string) => void;
+    onOpenSettings?: () => void;
 }
 
 const SUGGESTIONS = [
@@ -92,6 +94,7 @@ export default function ChatArea({
     messages,
     isLoading,
     onSendMessage,
+    onOpenSettings,
 }: ChatAreaProps) {
     const [input, setInput] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -130,6 +133,19 @@ export default function ChatArea({
 
     return (
         <div className="flex-1 flex flex-col h-full">
+            {/* Header with strategy badge - shown when there are messages */}
+            {messages.length > 0 && (
+                <div className="flex items-center justify-between px-4 py-2 border-b border-dark-800 bg-dark-900/50 backdrop-blur-sm">
+                    <div className="flex items-center gap-2 text-sm text-dark-400">
+                        <Bot size={16} />
+                        <span>Chat</span>
+                        <span className="text-dark-600">•</span>
+                        <span>{messages.length} messages</span>
+                    </div>
+                    <StrategyBadge onClick={onOpenSettings} />
+                </div>
+            )}
+
             {/* Messages area */}
             <div className="flex-1 overflow-y-auto">
                 {messages.length === 0 ? (

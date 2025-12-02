@@ -25,6 +25,7 @@ interface SidebarProps {
     onSelectSession: (sessionId: string) => void;
     onNewSession: () => void;
     onDeleteSession: (sessionId: string) => void;
+    onOpenSettings: () => void;
 }
 
 export default function Sidebar({
@@ -35,6 +36,7 @@ export default function Sidebar({
     onSelectSession,
     onNewSession,
     onDeleteSession,
+    onOpenSettings,
 }: SidebarProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -204,13 +206,25 @@ export default function Sidebar({
 
                 {/* Footer */}
                 <div className="p-4 border-t border-dark-800 space-y-3">
-                    {/* Settings panel toggle */}
+                    {/* Settings button */}
+                    <button
+                        onClick={onOpenSettings}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-dark-300 hover:text-white bg-dark-800/50 hover:bg-dark-800 border border-dark-700 hover:border-dark-600 rounded-xl transition-all"
+                    >
+                        <Settings size={18} className="text-dark-400" />
+                        <span className="font-medium">Settings</span>
+                        <span className="ml-auto text-xs text-dark-500 bg-dark-700 px-2 py-0.5 rounded">
+                            Strategy
+                        </span>
+                    </button>
+
+                    {/* System info toggle */}
                     <button
                         onClick={() => setShowSettings(!showSettings)}
-                        className="w-full flex items-center justify-between px-3 py-2 text-sm text-dark-400 hover:text-dark-300 hover:bg-dark-800 rounded-lg transition-colors"
+                        className="w-full flex items-center justify-between px-3 py-2 text-sm text-dark-500 hover:text-dark-400 rounded-lg transition-colors"
                     >
                         <div className="flex items-center gap-2">
-                            <Settings size={16} />
+                            <Database size={14} />
                             <span>System Info</span>
                         </div>
                         <span className="text-xs">{showSettings ? '▲' : '▼'}</span>

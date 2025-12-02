@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import Sidebar from '@/components/SideBar';
 import ChatArea from '@/components/ChatArea';
+import SettingsModal from '@/components/SettingsModal';
 import { api, ApiError } from '@/lib/api';
-import type { Session, Message, StatusResponse } from '@/types';
+import type { Session, Message, StatusResponse, Citation } from '@/types';
 
 export default function Home() {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -15,6 +16,7 @@ export default function Home() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Auto-dismiss errors after 5 seconds
   useEffect(() => {
@@ -43,7 +45,7 @@ export default function Home() {
     };
 
     fetchStatus();
-    const interval = setInterval(fetchStatus, 300000);
+    const interval = setInterval(fetchStatus, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -185,6 +187,12 @@ export default function Home() {
 
   return (
     <div className="flex h-screen bg-dark-950 text-white">
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+      />
+
       {/* Error toast */}
       {error && (
         <div className="fixed top-4 right-4 z-50 max-w-md animate-fade-in">
@@ -210,6 +218,7 @@ export default function Home() {
         onSelectSession={handleSelectSession}
         onNewSession={handleNewSession}
         onDeleteSession={handleDeleteSession}
+        onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
       <main className="flex-1 flex flex-col min-w-0">
@@ -217,6 +226,7 @@ export default function Home() {
           messages={messages}
           isLoading={isSending || isLoadingMessages}
           onSendMessage={handleSendMessage}
+          onOpenSettings={() => setIsSettingsOpen(true)}
         />
       </main>
     </div>

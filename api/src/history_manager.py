@@ -218,7 +218,10 @@ Conversation:
         return result
 
 
+strategies = {}
 # Factory function
+
+
 def create_history_manager(
     strategy: str = "sliding_window",
     llm: Optional[ChatOllama] = None,
@@ -238,19 +241,21 @@ def create_history_manager(
         HistoryStrategy instance
     """
     config = config or HistoryConfig()
-
-    strategies = {
-        "sliding_window": lambda: SlidingWindowStrategy(config.max_messages),
-        "token_budget": lambda: TokenBudgetStrategy(
-            config.max_tokens, config.model_name
-        ),
-        "summarization": lambda: SummarizationStrategy(
-            llm, config.summarize_after, config.summary_max_tokens
-        ) if llm else SlidingWindowStrategy(config.max_messages)
-    }
+    global strategies
+    if not strategies:
+        strategies = {
+            "sliding_window": lambda: SlidingWindowStrategy(config.max_messages),
+            "token_budget": lambda: TokenBudgetStrategy(
+                config.max_tokens, config.model_name
+            ),
+            "summarization": lambda: SummarizationStrategy(
+                llm, config.summarize_after, config.summary_max_tokens
+            ) if llm else SlidingWindowStrategy(config.max_messages)
+        }
 
     if strategy not in strategies:
         raise ValueError(
             f"Unknown strategy: {strategy}. Choose from {list(strategies.keys())}")
+    print(f"Creating History manager with strategy {strategy}")
 
     return strategies[strategy]()

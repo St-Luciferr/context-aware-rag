@@ -107,11 +107,17 @@ class RAGChatbot:
 
     def _init_llm(self) -> ChatOllama:
         """Initialize the Ollama LLM with settings."""
+        # support for cloud models
+        client_kwargs = {
+            "headers": {'Authorization': 'Bearer ' + settings.ollama.api_key}
+        } if settings.ollama.api_key else {}
         return ChatOllama(
             model=settings.ollama.model,
             base_url=settings.ollama.base_url,
             temperature=settings.ollama.temperature,
-            keep_alive=-1
+            keep_alive=-1,
+            client_kwargs=client_kwargs
+
         )
 
     def _load_vector_store(self) -> Chroma:
@@ -266,7 +272,9 @@ class RAGChatbot:
 
         system_prompt = (
             "You are a helpful AI assistant with access to a knowledge base. "
-            "Use the provided context to answer questions accurately and conversationally.\n\n"
+            "Use the provided context to answer questions accurately and conversationally.\n"
+            "You can also refer to the provided message history if required.\n"
+            "NOTE: You must be able to distinguish if you should refer to the provided context, previous messages or both accordingly\n\n"
             "IMPORTANT: When referencing information from the context, ALWAYS cite your sources "
             "using the citation numbers provided in square brackets [1], [2], etc.\n\n"
             "If the context doesn't contain relevant information, say so honestly.\n"

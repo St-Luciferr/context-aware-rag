@@ -7,6 +7,7 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
 from typing import List, Dict
+from src.config import settings
 
 
 class AutoCut:
@@ -17,8 +18,8 @@ class AutoCut:
     def __init__(
         self,
         model_name: str = 'all-MiniLM-L6-v2',
-        similarity_threshold: float = 0.85,
-        max_chunks: int = 5
+        similarity_threshold: float = 0.80,
+        max_chunks: int = settings.rag.distilled_retrieval_k
     ):
         """
         Implements context distillation to remove redundant content from RAG retrieval

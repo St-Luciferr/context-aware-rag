@@ -47,7 +47,6 @@ class HistorySettings(BaseSettings):
         alias="HISTORY_SUMMARY_MAX_TOKENS"
     )
 
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -61,6 +60,7 @@ class OllamaSettings(BaseSettings):
     model: str = Field(default="llama3.2", alias="OLLAMA_MODEL")
     base_url: str = Field(default="http://localhost:11434",
                           alias="OLLAMA_BASE_URL")
+    api_key: str = Field(default="", alias="OLLAMA_API_KEY")
     temperature: float = Field(
         default=0.7, ge=0.0, le=2.0, alias="OLLAMA_TEMPERATURE")
     model_config = SettingsConfigDict(
@@ -101,6 +101,8 @@ class EmbeddingSettings(BaseSettings):
 class RAGSettings(BaseSettings):
     """RAG pipeline configuration."""
     retrieval_k: int = Field(default=5, ge=1, le=20, alias="RAG_RETRIEVAL_K")
+    distilled_retrieval_k: int = Field(
+        default=3, ge=1, le=5, alias="DISTILLED_RETRIEVAL_K")
     # Semantic chunker settings
     breakpoint_threshold_type: str = Field(
         default="percentile",

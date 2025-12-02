@@ -169,7 +169,7 @@ async def new_session():
     return {"session_id": str(uuid.uuid4())}
 
 
-@router.get("/api/strategies", response_model=StrategiesResponse)
+@router.get("/strategies", response_model=StrategiesResponse)
 async def get_strategies():
     """Get available history management strategies."""
     try:
@@ -187,7 +187,7 @@ async def get_strategies():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/strategies", response_model=ChangeStrategyResponse)
+@router.post("/strategies", response_model=ChangeStrategyResponse)
 async def change_strategy(request: ChangeStrategyRequest):
     """Change the history management strategy."""
     try:
