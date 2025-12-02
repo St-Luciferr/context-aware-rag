@@ -8,7 +8,8 @@ import wikipedia
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
-
+import chromadb
+from pathlib import Path
 from src.config import settings
 
 
@@ -19,6 +20,62 @@ def get_embeddings() -> HuggingFaceEmbeddings:
         model_kwargs={"device": settings.embedding.device},
         encode_kwargs={"normalize_embeddings": settings.embedding.normalize}
     )
+
+
+def check_collection_exists() -> tuple[bool, int]:
+    """
+    Check if the ChromaDB collection exists and has documents.
+
+    Returns:
+        tuple: (exists: bool, document_count: int)
+    """
+    persist_dir = settings.chroma.persist_dir
+    collection_name = settings.chroma.collection_name
+
+    # Check if persist directory exists
+    if not Path(persist_dir).exists():
+        return False, 0
+
+    try:
+        # Initialize ChromaDB client
+        client = chromadb.PersistentClient(path=persist_dir)
+
+        # Get list of collections
+        collections = client.list_collections()
+        collection_names = [c.name for c in collections]
+
+        if collection_name not in collection_names:
+            return False, 0
+
+        # Get the collection and check document count
+        collection = client.get_collection(collection_name)
+        count = collection.count()
+
+        return count > 0, count
+
+    except Exception as e:
+        print(f"Warning: Error checking collection: {e}")
+        return False, 0
+
+
+def delete_collection() -> bool:
+    """
+    Delete the existing ChromaDB collection.
+
+    Returns:
+        bool: True if deleted successfully, False otherwise
+    """
+    persist_dir = settings.chroma.persist_dir
+    collection_name = settings.chroma.collection_name
+
+    try:
+        client = chromadb.PersistentClient(path=persist_dir)
+        client.delete_collection(collection_name)
+        print(f"✓ Deleted existing collection: {collection_name}")
+        return True
+    except Exception as e:
+        print(f"Warning: Could not delete collection: {e}")
+        return False
 
 
 def fetch_wikipedia_content(topics: list[str]) -> list[dict]:
@@ -56,8 +113,6 @@ def fetch_wikipedia_content(topics: list[str]) -> list[dict]:
 def create_vector_store(documents: list[dict], embeddings: HuggingFaceEmbeddings) -> Chroma:
     """Create ChromaDB vector store from documents using semantic chunking."""
 
-    # Initialize semantic chunker with embeddings
-    # SemanticChunker splits text based on semantic similarity between sentences
     print(f"\nInitializing SemanticChunker:")
     print(f"  Breakpoint type: {settings.rag.breakpoint_threshold_type}")
     print(f"  Breakpoint amount: {settings.rag.breakpoint_threshold_amount}")
@@ -99,24 +154,60 @@ def create_vector_store(documents: list[dict], embeddings: HuggingFaceEmbeddings
     return vector_store
 
 
-def run_ingestion():
+def run_ingestion(force: bool = False) -> dict:
+    """
+    Run the ingestion pipeline.
+
+    Args:
+        force: If True, delete existing collection and re-ingest
+
+    Returns:
+        dict: Status and message
+    """
     try:
+        # Check if collection already exists
+        exists, doc_count = check_collection_exists()
+
+        if exists:
+            if force:
+                print(
+                    f"\nCollection '{settings.chroma.collection_name}' exists with {doc_count} documents.")
+                print("  Force flag set - deleting and re-ingesting...")
+                delete_collection()
+            else:
+                print(
+                    f"\nCollection '{settings.chroma.collection_name}' already exists with {doc_count} documents.")
+                print("Skipping ingestion. Use --force to re-ingest.")
+                return {
+                    "status": "skipped",
+                    "message": f"Collection already exists with {doc_count} documents",
+                    "document_count": doc_count
+                }
+
         print(f"\nLoading embedding model: {settings.embedding.model_name}")
         embeddings = get_embeddings()
+
         print("\n[1/2] Fetching Wikipedia content...")
         print(f"Topics: {settings.wiki_topics}")
         documents = fetch_wikipedia_content(settings.wiki_topics)
-        print(f"Fetched {len(documents)} documents")
+        print(f"✓ Fetched {len(documents)} documents")
+
         print("\n[2/2] Creating vector store with semantic chunking...")
         _ = create_vector_store(documents, embeddings)
+
+        # Get final count
+        _, final_count = check_collection_exists()
+
         return {
             "status": "success",
-            "message": "vector index initialized Successfully"
+            "message": "Vector index initialized successfully",
+            "document_count": final_count
         }
+
     except Exception as e:
         print(traceback.format_exc())
         return {
-            "status": "errror",
+            "status": "error",
             "message": str(e)
         }
 

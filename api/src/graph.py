@@ -73,8 +73,7 @@ class RAGChatbot:
         self.history_config = history_config or HistoryConfig(
             max_messages=10,
             max_tokens=4000,
-            summarize_after=8,
-            always_keep_last=2,
+            summarize_after=8
         )
 
         self.history_manager = self._init_history_manager(history_strategy)

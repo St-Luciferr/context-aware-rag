@@ -7,7 +7,32 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.router import router
 from src.config import settings
-from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
+from src.graph import get_chatbot
+from src.ingest import run_ingestion
+from contextlib import asynccontextmanager
+
+# ----------------------------
+# Lifespan: startup + shutdown
+# ----------------------------
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize chatbot at startup
+    _ = get_chatbot()
+    print("Chatbot initialized and ready!")
+
+    result = run_ingestion()
+    if result.get("status") == "success":
+        print(f"{result.get('message')} document_count: {result.get('document_count')}")
+
+    else:
+        print(f"Error in Ingestion: {result.get('message')}")
+
+    yield
+
+    print("🛑 Shutting down chatbot...")
 
 
 def get_application() -> FastAPI:
@@ -16,7 +41,8 @@ def get_application() -> FastAPI:
     app = FastAPI(
         title=settings.api.title,
         description="Context-aware chatbot powered by LangGraph and Ollama",
-        version=settings.api.version
+        version=settings.api.version,
+        lifespan=lifespan
     )
 
     # Enable CORS for frontend
@@ -34,9 +60,11 @@ app = get_application()
 app.include_router(router=router, prefix="/api/v1")
 
 
-@app.get("/", response_class=FileResponse)
+@app.get("/", response_class=JSONResponse)
 async def serve_ui():
-    """Serve the web UI."""
-    return FileResponse("index.html")
-
-
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "Running"
+        }
+    )
