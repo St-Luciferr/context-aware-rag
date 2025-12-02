@@ -4,7 +4,6 @@ LangGraph-based Context-Aware Chatbot
 Implements a stateful conversation graph with RAG capabilities
 """
 
-from pprint import pprint
 from typing import TypedDict, Annotated, Sequence, Optional, List, Dict, Any
 from operator import add
 from langgraph.graph import StateGraph, END
@@ -21,6 +20,7 @@ from datetime import datetime, timezone
 from dataclasses import field, dataclass
 from src.config import settings
 from src.chat_storage import ChatStorage
+from src.autocut import AutoCut
 import time
 from src.history_manager import (
     HistoryStrategy,
@@ -69,7 +69,7 @@ class RAGChatbot:
         self.vector_store = self._load_vector_store()
         self.llm = self._init_llm()
         self.storage = ChatStorage()
-
+        self.autocut = AutoCut()
         self.history_config = history_config or HistoryConfig(
             max_messages=10,
             max_tokens=4000,
@@ -110,7 +110,8 @@ class RAGChatbot:
         return ChatOllama(
             model=settings.ollama.model,
             base_url=settings.ollama.base_url,
-            temperature=settings.ollama.temperature
+            temperature=settings.ollama.temperature,
+            keep_alive=-1
         )
 
     def _load_vector_store(self) -> Chroma:
@@ -139,7 +140,7 @@ class RAGChatbot:
         """Initialize ensemble retriever combining vector and BM25 search."""
         # Create vector search retriever
         similarity_retriever = self.vector_store.as_retriever(
-            search_type="similarity",
+            search_type="mmr",
             search_kwargs={'k': k}
         )
 
@@ -165,7 +166,7 @@ class RAGChatbot:
         if k != settings.rag.retrieval_k:
             print(f"Recreating Ensemble: K = {k}")
             similarity_retriever = self.vector_store.as_retriever(
-                search_type="similarity",
+                search_type="mmr",
                 search_kwargs={'k': k}
             )
             self.bm25_retriever.k = k
@@ -175,8 +176,9 @@ class RAGChatbot:
                 weights=[0.5, 0.5]
             )
             docs = ensemble_retriever.invoke(query)
-        docs = self.ensemble_retriever.invoke(query)
-        # Use pre-initialized retriever for default k
+        else:
+            docs = self.ensemble_retriever.invoke(query)
+        print(f"retrieved {len(docs)} doduments")
         return docs
 
     def refresh_bm25_index(self):
@@ -192,6 +194,8 @@ class RAGChatbot:
         query = state["current_query"]
         start_time = time.time()
         docs = self.hybrid_search(query, k=settings.rag.retrieval_k)
+        docs = self.autocut.distill(query, docs)
+        print(f"Distilled to {len(docs)} documents")
 
         if not docs:
             return {
