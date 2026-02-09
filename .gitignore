@@ -18,3 +18,4 @@ build/
 chroma_db/
 *.db
 *test.py
+*.pptx

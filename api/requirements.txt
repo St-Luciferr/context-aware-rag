@@ -2,6 +2,7 @@
 langchain>=1.1.0
 langgraph>=1.0.4
 langchain-community>=0.4.1
+langsmith>=0.1.0
 langchain-experimental==0.4.0
 langchain-ollama>=1.0.0
 langchain-chroma>=1.0.0

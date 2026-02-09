@@ -269,19 +269,28 @@ class RAGChatbot:
         citations = state.get("citations", [])
         query = state.get("current_query", "")
 
-        system_prompt = (
-            "You are a helpful AI assistant with access to a knowledge base. "
-            "Use the provided context to answer questions accurately and conversationally.\n"
-            "You can also refer to the provided message history if required.\n"
-            "NOTE: You must be able to distinguish if you should refer to the provided context, previous messages or both accordingly\n\n"
-            "IMPORTANT: When referencing information from the context, ALWAYS cite your sources "
-            "using the citation numbers provided in square brackets [1], [2], etc.\n\n"
-            "If the context doesn't contain relevant information, say so honestly.\n"
-            "Keep responses concise but informative, and always include citations where relevant.\n\n"
-            "Context from knowledge base:\n"
-            f"{context}\n\n"
-            f"User query: {query}"
-        )
+        # Structured prompt following best practices: Role, Instructions, Output Format
+        system_prompt = f"""## Role
+You are an AI research assistant specialized in Artificial Intelligence and Machine Learning topics. You provide accurate, well-sourced information from a curated knowledge base.
+
+## Instructions
+1. Answer questions using ONLY the provided context and conversation history
+2. ALWAYS cite sources using [1], [2], etc. when referencing context information
+3. If the context lacks relevant information, clearly state: "I don't have specific information about that in my knowledge base"
+4. Distinguish between: (a) new information from context, (b) follow-up from conversation history, (c) combination of both
+5. Keep responses concise (2-4 paragraphs maximum) unless detailed explanation is requested
+
+## Output Format
+- Start with a direct answer to the question
+- Support with relevant details from sources
+- Include citations [1], [2], etc. inline where information is referenced
+
+## Knowledge Base Context
+{context}
+
+## User Question
+{query}
+"""
 
         messages: List[Any] = [SystemMessage(content=system_prompt)]
         previous_messages = state.get("messages") or []
@@ -354,10 +363,22 @@ class RAGChatbot:
             "citations": []
         }
 
-        # Run the graph
+        # Run the graph with tracing metadata for LangSmith
         print("Generating Response")
         start_time = time.time()
-        result = self.graph.invoke(initial_state)
+        result = self.graph.invoke(
+            initial_state,
+            config={
+                "run_name": f"RAG Chat - {session_id[:8]}",
+                "metadata": {
+                    "session_id": session_id,
+                    "query_length": len(user_message),
+                    "history_strategy": self.get_current_strategy(),
+                    "model": settings.ollama.model,
+                },
+                "tags": ["rag", "chat", self.get_current_strategy()],
+            }
+        )
         print(f"Generation Complete in {time.time()-start_time} Seconds")
 
         # Extract AI response

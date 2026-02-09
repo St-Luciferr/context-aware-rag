@@ -1,17 +1,74 @@
-# RAG Chatbot with LangGraph
-
-A context-aware chatbot that retrieves information from Wikipedia articles about AI/ML topics, maintains conversational context, and provides responses via a FastAPI backend and web UI.
+# Context-Aware RAG Chatbot
 
 ![Architecture](https://img.shields.io/badge/Architecture-RAG-blue)
 ![Search](https://img.shields.io/badge/Search-Hybrid-green)
 ![Chunking](https://img.shields.io/badge/Chunking-Semantic-orange)
 ![Framework](https://img.shields.io/badge/Framework-LangGraph-purple)
+![Observability](https://img.shields.io/badge/Observability-LangSmith-yellow)
 
+---
+
+## 1. Overview
+
+A GenAI-powered chatbot that provides accurate, citation-backed answers about Artificial Intelligence and Machine Learning topics using Retrieval-Augmented Generation (RAG). The system ingests curated Wikipedia articles, processes them with semantic chunking, and retrieves relevant context using hybrid search (vector + BM25) to generate well-sourced responses.
+
+**Core Value:** Enables users to get reliable, verifiable information about AI/ML topics with automatic source citations, reducing misinformation and providing transparency in AI-generated responses.
+
+---
+
+## 2. Problem Statement
+
+Finding accurate, well-sourced information about AI/ML topics presents several challenges:
+
+- **Information Fragmentation:** Knowledge is scattered across multiple sources with varying quality and accuracy
+- **Lack of Citations:** Traditional chatbots generate responses without providing verifiable sources
+- **Context Loss:** Standard chat systems lose track of conversation context, leading to repetitive or inconsistent answers
+- **Hallucination Risk:** LLMs may generate plausible but incorrect information without grounding in factual sources
+
+This project addresses these challenges by implementing a RAG-based system that grounds every response in retrieved knowledge base content with explicit citations.
+
+---
+
+## 3. Proposed Solution
+
+A RAG-based chatbot architecture that:
+
+- **Ingests curated content** from Wikipedia articles on AI/ML topics using semantic chunking to preserve context integrity
+- **Employs hybrid search** combining vector similarity (MMR) and BM25 keyword search for superior retrieval accuracy
+- **Implements context distillation** (AutoCut) to filter redundant information before generation
+- **Generates responses with automatic citation tracking** using numbered references [1], [2], etc.
+- **Manages conversation history** with multiple optimization strategies (sliding window, token budget, summarization)
+- **Provides observability** through LangSmith integration for tracing and evaluation
+
+**Workflow:**
+
+```text
+User Query -> History Optimization -> Hybrid Retrieval -> Context Distillation -> LLM Generation -> Cited Response
+```
+
+---
+
+## 4. Technology & Tools
+
+| Category | Technology |
+| ---------- | ------------ |
+| **Orchestration** | LangChain, LangGraph |
+| **Vector Store** | ChromaDB |
+| **Embeddings** | HuggingFace (all-MiniLM-L6-v2, BGE) |
+| **LLM** | Ollama (Llama 3.2, configurable) |
+| **Retrieval** | Hybrid (Vector MMR + BM25) |
+| **Observability** | LangSmith (tracing & evaluation) |
+| **Backend** | FastAPI, Pydantic |
+| **Frontend** | Next.js 14, TypeScript, Tailwind CSS |
+| **Database** | SQLite (session persistence) |
+| **Deployment** | Docker, Docker Compose |
+
+---
 
 ## ✨ Key Features
 
 | Feature | Description |
-|---------|-------------|
+| --------- | ------------- |
 | 🔍 **Hybrid Search** | Combines vector similarity + BM25 keyword search |
 | 📄 **Semantic Chunking** | Intelligent document splitting based on meaning |
 | 🧠 **LangGraph State Machine** | Structured conversation flow management |
@@ -25,7 +82,7 @@ A context-aware chatbot that retrieves information from Wikipedia articles about
 
 ## 🏗️ Architecture Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              RAG CHATBOT ARCHITECTURE                       │
 ├─────────────────────────────────────────────────────────────────────────────┤
@@ -57,7 +114,6 @@ A context-aware chatbot that retrieves information from Wikipedia articles about
 
 ---
 
-
 ## 🔬 Advanced Techniques
 
 ### 1. Hybrid Search (Vector + BM25)
@@ -73,7 +129,7 @@ ensemble_retriever = EnsembleRetriever(
 ```
 
 | Method | Strengths | Weaknesses |
-|--------|-----------|------------|
+| -------- | ----------- | ------------ |
 | **Vector Search** | Semantic understanding, synonyms | May miss exact matches |
 | **BM25 Search** | Exact keyword matching, fast | No semantic understanding |
 | **Hybrid** | ✅ Best of both worlds | Slightly more compute |
@@ -91,8 +147,9 @@ text_splitter = SemanticChunker(
 ```
 
 **Breakpoint Types:**
+
 | Type | Description | Best For |
-|------|-------------|----------|
+| ------ | ------------- | ---------- |
 | `percentile` | Split at Nth percentile similarity drop | General use |
 | `standard_deviation` | Split at N std deviations from mean | Technical docs |
 | `interquartile` | IQR-based outlier detection | Mixed content |
@@ -117,7 +174,7 @@ workflow.add_edge("retrieve", "generate")
 workflow.add_edge("generate", END)
 ```
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────┐
 |        ┌─────────┐     ┌──────────┐     ┌──────────┐    ┌─────┐        |
 |        │  START  │────▶│ Retrieve │────▶│ Generate │───▶│ END │        |
@@ -146,14 +203,14 @@ strategies = {
 ```
 
 | Strategy | How It Works | Best For |
-|----------|--------------|----------|
+| ---------- | -------------- | ---------- |
 | **Sliding Window** | Keep last N messages | Most conversations |
 | **Token Budget** | Limit by token count | Cost-sensitive apps |
 | **Summarization** | Summarize old messages | Long conversations |
 
-
 **Flow:**
-```
+
+```text
 Full History (20 messages)
          │
          ▼
@@ -193,7 +250,6 @@ citation = {
 }
 ```
 
-
 ### 6. Persistent Storage Architecture
 
 SQLite-backed session management:
@@ -220,34 +276,41 @@ CREATE TABLE IF NOT EXISTS messages (
 ```
 
 ---
+
 ## Quick Start (Docker)
 
 The easiest way to run the chatbot is with Docker Compose. Ollama runs on your host machine.
 
-#### 1. Start Ollama on your host machine
+### 1. Start Ollama on your host machine
+
 - Install Ollama (Linux)
+
   ```bash
   curl -fsSL https://ollama.com/install.sh | sh
   ```
 
-- Or download from https://ollama.com/download
+- Or download from <https://ollama.com/download>
 
 - Run Ollama Server
+
   ```bash
   ollama serve
   ```
 
-#### 2. Pull the model (if not already done)
+### 2. Pull the model (if not already done)
+
 ```bash
 ollama pull <model_name>
 ```
 
-#### 3. Copy and configure `.env`
+### 3. Copy and configure `.env`
+
 ```bash
 cp .env.example .env
 ```
 
-#### 4. Build and run container
+### 4. Build and run container
+
 ```bash
 docker compose up
 ```
@@ -281,18 +344,21 @@ docker compose down -v
 #### 1. Install Ollama and Pull Model
 
 - Install Ollama (Linux)
+
   ```bash
   curl -fsSL https://ollama.com/install.sh | sh
   ```
 
-- Or download from https://ollama.com/download
+- Or download from <https://ollama.com/download>
 
 - Start Ollama service
+
   ```bash
   ollama serve
   ```
 
 - Pull the model (in another terminal)
+
   ```bash
   ollama pull <model_name>
   ```
@@ -300,11 +366,14 @@ docker compose down -v
 #### 2. Set Up Python Environment
 
 - Create and activate virtual environment
+
   ```bash
   python -m venv venv
   source venv/bin/activate  # On Windows: venv\Scripts\activate
   ```
+
 - Install dependencies
+
   ```bash
   pip install -r requirements.txt
   ```
@@ -312,9 +381,11 @@ docker compose down -v
 #### 3. Configure Environment
 
 - Copy example environment file
+
   ```bash
   cp .env.example .env
   ```
+
 - Edit .env to customize settings (optional)
 
 #### 4. Ingest Documents
@@ -334,7 +405,7 @@ python api.py
 All configuration is managed via environment variables in `.env`:
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| ---------- | --------- | ------------- |
 | `OLLAMA_MODEL` | `llama3.2:1b` | Ollama model to use |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
 | `OLLAMA_API_KEY` | `38a2258........` | Api Key for cloud Ollama model |
@@ -347,28 +418,26 @@ All configuration is managed via environment variables in `.env`:
 | `DISTILLED_RETRIEVAL_K` | `3` | Number of chunks after context distillation |
 | `RAG_BREAKPOINT_TYPE` | `percentile` | Semantic chunker type* |
 | `RAG_BREAKPOINT_AMOUNT` | `95` | Threshold for chunk boundaries |
-| `HISTORY_STRATEGY`           | `sliding_window` | Strategy used for managing conversation history         |
-| `HISTORY_MAX_MESSAGES`       | `10`             | Maximum number of past messages to retain               |
-| `HISTORY_MAX_TOKENS`         | `4000`           | Maximum total tokens allowed in history before trimming |
-| `HISTORY_SUMMARIZE_AFTER`    | `8`              | Number of messages after which summarization begins     |
-| `HISTORY_SUMMARY_MAX_TOKENS` | `500`            | Maximum token limit for the generated summary           |
+| `HISTORY_STRATEGY` | `sliding_window` | Strategy used for managing conversation history |
+| `HISTORY_MAX_MESSAGES` | `10` | Maximum number of past messages to retain |
+| `HISTORY_MAX_TOKENS` | `4000` | Maximum total tokens allowed in history before trimming |
+| `LANGSMITH_TRACING` | `false` | Enable LangSmith tracing (set to `true` to enable) |
+| `LANGSMITH_API_KEY` | `` | LangSmith API key from smith.langchain.com |
+| `LANGSMITH_PROJECT` | `context-aware-rag` | LangSmith project name for grouping traces |
+| `HISTORY_SUMMARIZE_AFTER` | `8` | Number of messages after which summarization begins |
+| `HISTORY_SUMMARY_MAX_TOKENS` | `500` | Maximum token limit for the generated summary |
 | `API_HOST` | `0.0.0.0` | API server host |
 | `API_PORT` | `8000` | API server port |
 | `WIKI_TOPICS` | *see .env.example* | Comma-separated Wikipedia topics |
 
-
 *Breakpoint types: `percentile`, `standard_deviation`, `interquartile`, `gradient`
-
-
-
-
 
 ## 📡 API Reference
 
 ### Core Endpoints
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| -------- | ---------- | ------------- |
 | `POST` | `/api/chat` | Send message, get response with citations |
 | `GET` | `/api/sessions` | List all sessions |
 | `GET` | `/api/history/{id}` | Get session history |
@@ -378,17 +447,16 @@ All configuration is managed via environment variables in `.env`:
 ### Strategy Endpoints
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| -------- | ---------- | ------------- |
 | `GET` | `/api/strategies` | Get available strategies |
 | `POST` | `/api/strategies` | Change active strategy |
 
 ### System Endpoints
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| -------- | ---------- | ------------- |
 | `GET` | `/api/status` | Health check |
 | `GET` | `/api/config` | Current configuration |
-
 
 ## Switching Models
 
@@ -410,7 +478,7 @@ Popular model options: `llama3.2`, `llama3.2:1b`, `mistral`, `phi3`, `gemma2`
 ## 🔧 Troubleshooting
 
 | Issue | Solution |
-|-------|----------|
+| ------- | ---------- |
 | **Ollama connection error** | Ensure `ollama serve` is running |
 | **Model not found** | Run `ollama pull llama3.2:1b` |
 | **ChromaDB error** | Delete `chroma_db/` and re-run `ingest.py` |
@@ -421,15 +489,16 @@ Popular model options: `llama3.2`, `llama3.2:1b`, `mistral`, `phi3`, `gemma2`
 
 ---
 
-## 📚 Tech Stack
+## Tech Stack
 
 | Component | Technology |
-|-----------|------------|
+| ----------- | ------------ |
 | **LLM Framework** | LangChain, LangGraph |
 | **Vector Store** | ChromaDB |
-| **Embeddings** | HuggingFace (BGE) |
-| **Search** | Ensemble (Vector + BM25) |
+| **Embeddings** | HuggingFace (BGE, all-MiniLM) |
+| **Search** | Ensemble (Vector MMR + BM25) |
 | **LLM** | Ollama (Llama 3.2, Mistral, etc.) |
+| **Observability** | LangSmith (tracing & evaluation) |
 | **Backend** | FastAPI, Pydantic |
 | **Storage** | SQLite |
 | **Frontend** | Next.js 14, TypeScript, Tailwind CSS |

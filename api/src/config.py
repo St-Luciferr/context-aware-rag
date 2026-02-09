@@ -130,6 +130,42 @@ class APISettings(BaseSettings):
     )
 
 
+class LangSmithSettings(BaseSettings):
+    """LangSmith tracing and observability configuration."""
+    enabled: bool = Field(
+        default=False,
+        alias="LANGSMITH_TRACING",
+        description="Enable LangSmith tracing (set to 'true' to enable)"
+    )
+    api_key: str = Field(
+        default="",
+        alias="LANGSMITH_API_KEY",
+        description="LangSmith API key from smith.langchain.com"
+    )
+    project: str = Field(
+        default="context-aware-rag",
+        alias="LANGSMITH_PROJECT",
+        description="LangSmith project name for grouping traces"
+    )
+    endpoint: str = Field(
+        default="https://api.smith.langchain.com",
+        alias="LANGSMITH_ENDPOINT",
+        description="LangSmith API endpoint"
+    )
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    @property
+    def is_configured(self) -> bool:
+        """Check if LangSmith is properly configured and enabled."""
+        return self.enabled and bool(self.api_key)
+
+
 class Settings(BaseSettings):
     """Main settings class combining all configuration sections."""
 
@@ -147,6 +183,7 @@ class Settings(BaseSettings):
     rag: RAGSettings = Field(default_factory=RAGSettings)
     api: APISettings = Field(default_factory=APISettings)
     history: HistorySettings = Field(default_factory=HistorySettings)
+    langsmith: LangSmithSettings = Field(default_factory=LangSmithSettings)
     env: str = Field(default='dev', alias="ENV")
     workers: int = Field(default=1, alias="WORKERS")
 
