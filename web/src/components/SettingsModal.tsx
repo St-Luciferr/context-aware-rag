@@ -15,6 +15,7 @@ import {
 import clsx from 'clsx';
 import { api } from '@/lib/api';
 import type { StrategyInfo } from '@/types';
+import TopicsManager from './TopicsManager';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -91,7 +92,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             />
 
             {/* Modal */}
-            <div className="relative w-full max-w-lg bg-dark-900 border border-dark-700 rounded-2xl shadow-2xl animate-fade-in">
+            <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-dark-900 border border-dark-700 rounded-2xl shadow-2xl animate-fade-in">
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-dark-700">
                     <div className="flex items-center gap-3">
@@ -217,6 +218,12 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                             </p>
                         </div>
                     </div>
+
+                    {/* Divider */}
+                    <div className="my-6 border-t border-dark-700" />
+
+                    {/* Section: Wikipedia Topics */}
+                    <TopicsManager />
                 </div>
 
                 {/* Footer */}

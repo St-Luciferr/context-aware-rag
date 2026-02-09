@@ -156,9 +156,30 @@ def create_vector_store(documents: list[dict], embeddings: HuggingFaceEmbeddings
 
 def run_ingestion(force: bool = False) -> dict:
     """
-    Run the ingestion pipeline.
+    Run the ingestion pipeline with all topics.
 
     Args:
+        force: If True, delete existing collection and re-ingest
+
+    Returns:
+        dict: Status and message
+    """
+    try:
+        from src.topics import get_all_topics
+        topics = get_all_topics()
+
+        return run_ingestion_with_topics(topics, force)
+    except Exception as e:
+        print(traceback.format_exc())
+        return {"status": "error", "message": str(e)}
+
+
+def run_ingestion_with_topics(topics: list[str], force: bool = False) -> dict:
+    """
+    Run the ingestion pipeline with specified topics (full re-ingestion).
+
+    Args:
+        topics: List of Wikipedia topics to ingest
         force: If True, delete existing collection and re-ingest
 
     Returns:
@@ -188,9 +209,16 @@ def run_ingestion(force: bool = False) -> dict:
         embeddings = get_embeddings()
 
         print("\n[1/2] Fetching Wikipedia content...")
-        print(f"Topics: {settings.wiki_topics}")
-        documents = fetch_wikipedia_content(settings.wiki_topics)
+        print(f"Topics: {topics}")
+        documents = fetch_wikipedia_content(topics)
         print(f"✓ Fetched {len(documents)} documents")
+
+        if not documents:
+            return {
+                "status": "error",
+                "message": "No documents fetched. Check if topics are valid Wikipedia articles.",
+                "document_count": 0
+            }
 
         print("\n[2/2] Creating vector store with semantic chunking...")
         _ = create_vector_store(documents, embeddings)
@@ -198,9 +226,12 @@ def run_ingestion(force: bool = False) -> dict:
         # Get final count
         _, final_count = check_collection_exists()
 
+        # Refresh BM25 index in the chatbot if it exists
+        _refresh_bm25_index()
+
         return {
             "status": "success",
-            "message": "Vector index initialized successfully",
+            "message": f"Vector index initialized with {len(topics)} topics",
             "document_count": final_count
         }
 
@@ -210,6 +241,159 @@ def run_ingestion(force: bool = False) -> dict:
             "status": "error",
             "message": str(e)
         }
+
+
+def add_topics_to_existing(topics: list[str]) -> dict:
+    """
+    Add new topics to the existing vector store (incremental ingestion).
+
+    This adds documents to the existing ChromaDB collection without deleting existing data.
+    Topics that already exist in ChromaDB are automatically skipped to prevent duplicates.
+
+    Args:
+        topics: List of Wikipedia topics to add
+
+    Returns:
+        dict: Status and message
+    """
+    try:
+        if not topics:
+            return {
+                "status": "skipped",
+                "message": "No topics to add",
+                "document_count": 0,
+                "topics_added": []
+            }
+
+        # Filter out topics that already exist in ChromaDB to prevent duplicates
+        from src.topics import get_ingested_topics_from_db
+        already_ingested = get_ingested_topics_from_db()
+        already_ingested_lower = {t.lower() for t in already_ingested}
+
+        new_topics = [t for t in topics if t.lower() not in already_ingested_lower]
+
+        if not new_topics:
+            return {
+                "status": "skipped",
+                "message": "All requested topics already exist in the knowledge base",
+                "document_count": 0,
+                "topics_added": []
+            }
+
+        skipped_count = len(topics) - len(new_topics)
+        if skipped_count > 0:
+            print(f"\nSkipping {skipped_count} topics that already exist in ChromaDB")
+
+        print(f"\nIncremental ingestion: Adding {len(new_topics)} new topics")
+        print(f"Topics: {new_topics}")
+
+        # Check if collection exists
+        exists, initial_count = check_collection_exists()
+        if not exists:
+            print("Collection doesn't exist, running full ingestion...")
+            return run_ingestion(force=False)
+
+        print(f"\nExisting collection has {initial_count} documents")
+        print(f"\nLoading embedding model: {settings.embedding.model_name}")
+        embeddings = get_embeddings()
+
+        print("\n[1/2] Fetching Wikipedia content for new topics...")
+        documents = fetch_wikipedia_content(new_topics)
+        print(f"✓ Fetched {len(documents)} documents")
+
+        if not documents:
+            return {
+                "status": "error",
+                "message": "No documents fetched. Check if topics are valid Wikipedia articles.",
+                "document_count": initial_count,
+                "topics_added": []
+            }
+
+        print("\n[2/2] Adding to existing vector store...")
+        added_count = add_documents_to_existing_store(documents, embeddings)
+
+        # Get final count
+        _, final_count = check_collection_exists()
+
+        # Refresh BM25 index
+        _refresh_bm25_index()
+
+        return {
+            "status": "success",
+            "message": f"Added {added_count} chunks from {len(documents)} topics",
+            "document_count": final_count,
+            "topics_added": [doc["metadata"]["title"] for doc in documents],
+            "chunks_added": added_count
+        }
+
+    except Exception as e:
+        print(traceback.format_exc())
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+
+def add_documents_to_existing_store(documents: list[dict], embeddings: HuggingFaceEmbeddings) -> int:
+    """Add documents to existing ChromaDB collection.
+
+    Args:
+        documents: List of document dicts with content and metadata
+        embeddings: Embeddings model instance
+
+    Returns:
+        Number of chunks added
+    """
+    print(f"\nInitializing SemanticChunker:")
+    print(f"  Breakpoint type: {settings.rag.breakpoint_threshold_type}")
+    print(f"  Breakpoint amount: {settings.rag.breakpoint_threshold_amount}")
+
+    text_splitter = SemanticChunker(
+        embeddings=embeddings,
+        breakpoint_threshold_type=settings.rag.breakpoint_threshold_type,
+        breakpoint_threshold_amount=settings.rag.breakpoint_threshold_amount
+    )
+
+    # Split documents into semantic chunks
+    texts, metadatas = [], []
+    for doc in documents:
+        print(f"Chunking: {doc['metadata']['title']}...", end=" ")
+        chunks = text_splitter.split_text(doc["content"])
+        print(f"{len(chunks)} chunks")
+        for i, chunk in enumerate(chunks):
+            texts.append(chunk)
+            metadatas.append({**doc["metadata"], "chunk_id": i})
+
+    print(f"\nCreated {len(texts)} semantic chunks total")
+
+    if not texts:
+        return 0
+
+    # Add to existing collection
+    print(f"\nAdding to existing vector store at: {settings.chroma.persist_dir}")
+
+    # Load existing vector store and add texts
+    vector_store = Chroma(
+        collection_name=settings.chroma.collection_name,
+        persist_directory=settings.chroma.persist_dir,
+        embedding_function=embeddings
+    )
+
+    vector_store.add_texts(texts=texts, metadatas=metadatas)
+
+    print(f"✓ Added {len(texts)} chunks to collection: {settings.chroma.collection_name}")
+    return len(texts)
+
+
+def _refresh_bm25_index():
+    """Refresh the BM25 index in the chatbot if it exists."""
+    try:
+        from src.graph import get_chatbot
+        bot = get_chatbot()
+        bot.refresh_bm25_index()
+        print("✓ BM25 index refreshed")
+    except Exception as e:
+        print(f"Warning: Could not refresh BM25 index: {e}")
 
 
 def main():
