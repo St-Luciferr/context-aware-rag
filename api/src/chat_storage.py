@@ -108,9 +108,9 @@ class ChatStorage:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT role, content, citations, timestamp 
-                FROM messages 
-                WHERE session_id = ? 
+                SELECT role, content, citations, timestamp
+                FROM messages
+                WHERE session_id = ?
                 ORDER BY timestamp ASC
             """, (session_id,))
 
@@ -126,6 +126,85 @@ class ChatStorage:
                 messages.append(msg)
 
             return messages
+
+    def load_messages_paginated(
+        self,
+        session_id: str,
+        limit: int = 20,
+        before_timestamp: str = None
+    ) -> dict:
+        """Load messages for a session with pagination (newest first, for infinite scroll up).
+
+        Args:
+            session_id: The session ID
+            limit: Maximum number of messages to return
+            before_timestamp: Only return messages before this timestamp (for pagination)
+
+        Returns:
+            Dict with messages, has_more flag, and oldest_timestamp for next page
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+
+            # Get total count for this session
+            cursor.execute(
+                "SELECT COUNT(*) FROM messages WHERE session_id = ?",
+                (session_id,)
+            )
+            total_count = cursor.fetchone()[0]
+
+            # Build query with optional before_timestamp filter (include id for stable React keys)
+            if before_timestamp:
+                cursor.execute("""
+                    SELECT id, role, content, citations, timestamp
+                    FROM messages
+                    WHERE session_id = ? AND timestamp < ?
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                """, (session_id, before_timestamp, limit))
+            else:
+                cursor.execute("""
+                    SELECT id, role, content, citations, timestamp
+                    FROM messages
+                    WHERE session_id = ?
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                """, (session_id, limit))
+
+            messages = []
+            for row in cursor.fetchall():
+                msg = {
+                    "id": row[0],
+                    "role": row[1],
+                    "content": row[2],
+                    "timestamp": row[4]
+                }
+                if row[3]:  # citations
+                    msg["citations"] = json.loads(row[3])
+                messages.append(msg)
+
+            # Reverse to get chronological order (oldest first)
+            messages.reverse()
+
+            # Determine if there are more messages
+            oldest_timestamp = messages[0]["timestamp"] if messages else None
+
+            if oldest_timestamp:
+                cursor.execute("""
+                    SELECT COUNT(*) FROM messages
+                    WHERE session_id = ? AND timestamp < ?
+                """, (session_id, oldest_timestamp))
+                remaining = cursor.fetchone()[0]
+                has_more = remaining > 0
+            else:
+                has_more = False
+
+            return {
+                "messages": messages,
+                "has_more": has_more,
+                "total_count": total_count,
+                "oldest_timestamp": oldest_timestamp
+            }
 
     def get_session_info(self, session_id: str) -> dict:
         """Get session metadata."""
