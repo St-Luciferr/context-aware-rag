@@ -8,6 +8,11 @@ import type {
     StrategiesResponse,
     ChangeStrategyRequest,
     ChangeStrategyResponse,
+    TopicsResponse,
+    AddTopicRequest,
+    AddTopicResponse,
+    RemoveTopicResponse,
+    IngestResponse,
 } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -66,8 +71,11 @@ export const api = {
             method: 'DELETE',
         }),
 
-    getHistory: (sessionId: string) =>
-        fetchApi<HistoryResponse>(`/api/v1/history/${sessionId}`),
+    getHistory: (sessionId: string, limit: number = 20, before?: string) => {
+        const params = new URLSearchParams({ limit: String(limit) });
+        if (before) params.append('before', before);
+        return fetchApi<HistoryResponse>(`/api/v1/history/${sessionId}?${params}`);
+    },
 
     // Chat
     sendMessage: (data: ChatRequest) =>
@@ -83,6 +91,37 @@ export const api = {
         fetchApi<ChangeStrategyResponse>('/api/v1/strategies', {
             method: 'POST',
             body: JSON.stringify(data),
+        }),
+
+    // Topics Management
+    getTopics: () => fetchApi<TopicsResponse>('/api/v1/topics'),
+
+    addTopic: (data: AddTopicRequest) =>
+        fetchApi<AddTopicResponse>('/api/v1/topics', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    removeTopic: (topic: string) =>
+        fetchApi<RemoveTopicResponse>(`/api/v1/topics/${encodeURIComponent(topic)}`, {
+            method: 'DELETE',
+        }),
+
+    resetTopics: () =>
+        fetchApi<AddTopicResponse>('/api/v1/topics/reset', {
+            method: 'POST',
+        }),
+
+    // Incremental ingestion - only ingest pending topics
+    ingestPendingTopics: () =>
+        fetchApi<IngestResponse>('/api/v1/topics/ingest', {
+            method: 'POST',
+        }),
+
+    // Full re-ingestion - delete and re-ingest all topics
+    fullReingest: () =>
+        fetchApi<IngestResponse>('/api/v1/topics/ingest/full', {
+            method: 'POST',
         }),
 };
 

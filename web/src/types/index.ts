@@ -12,6 +12,7 @@ export interface Citation {
 }
 
 export interface Message {
+    id?: number;
     role: 'user' | 'assistant';
     content: string;
     timestamp?: string;
@@ -45,6 +46,9 @@ export interface ChatResponse {
 export interface HistoryResponse {
     session_id: string;
     messages: Message[];
+    has_more: boolean;
+    total_count: number;
+    oldest_timestamp: string | null;
 }
 
 export interface StatusResponse {
@@ -85,4 +89,40 @@ export interface ChangeStrategyResponse {
     success: boolean;
     current_strategy: string;
     message: string;
+}
+
+// Topics Types
+export interface TopicInfo {
+    name: string;
+    is_default: boolean;
+    is_ingested: boolean;
+}
+
+export interface TopicsResponse {
+    topics: TopicInfo[];
+    total: number;
+    ingested_count: number;
+    pending_count: number;
+}
+
+export interface AddTopicRequest {
+    topic: string;
+}
+
+export interface AddTopicResponse {
+    success: boolean;
+    message: string;
+}
+
+export interface RemoveTopicResponse {
+    success: boolean;
+    message: string;
+}
+
+export interface IngestResponse {
+    status: string;
+    message: string;
+    document_count?: number;
+    chunks_added?: number;
+    topics_added?: string[];
 }
