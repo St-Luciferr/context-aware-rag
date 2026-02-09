@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Loader2, Bot, Sparkles, Lightbulb } from 'lucide-react';
 import clsx from 'clsx';
 import Message from './Message';
@@ -10,7 +10,10 @@ import type { Message as MessageType } from '@/types';
 interface ChatAreaProps {
     messages: MessageType[];
     isLoading: boolean;
+    isLoadingMore?: boolean;
+    hasMoreMessages?: boolean;
     onSendMessage: (message: string) => void;
+    onLoadMore?: () => void;
     onOpenSettings?: () => void;
 }
 
@@ -93,20 +96,96 @@ function WelcomeScreen({
 export default function ChatArea({
     messages,
     isLoading,
+    isLoadingMore = false,
+    hasMoreMessages = false,
     onSendMessage,
+    onLoadMore,
     onOpenSettings,
 }: ChatAreaProps) {
     const [input, setInput] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const messagesContainerRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const prevMessageCountRef = useRef(0);
+    const prevScrollHeightRef = useRef(0);
+    const isLoadingMoreRef = useRef(false);
+    const lastScrollCheckRef = useRef(0); // For throttling scroll handler
 
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    };
+    const scrollToBottom = useCallback(() => {
+        // Use requestAnimationFrame for smoother scrolling
+        requestAnimationFrame(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        });
+    }, []);
 
+    // Reset ref when isLoadingMore prop changes to false (handles both success and error cases)
     useEffect(() => {
-        scrollToBottom();
-    }, [messages, isLoading]);
+        if (!isLoadingMore) {
+            isLoadingMoreRef.current = false;
+        }
+    }, [isLoadingMore]);
+
+    // Maintain scroll position when loading older messages
+    useEffect(() => {
+        if (isLoadingMoreRef.current && messagesContainerRef.current && !isLoadingMore) {
+            const container = messagesContainerRef.current;
+            const newScrollHeight = container.scrollHeight;
+            const scrollDiff = newScrollHeight - prevScrollHeightRef.current;
+            container.scrollTop = scrollDiff;
+        }
+    }, [messages, isLoadingMore]);
+
+    // Only scroll to bottom when new messages are added at the end
+    useEffect(() => {
+        const messageCount = messages.length;
+        const wasAtBottom = prevMessageCountRef.current < messageCount;
+
+        if (wasAtBottom && !isLoadingMoreRef.current) {
+            prevMessageCountRef.current = messageCount;
+            scrollToBottom();
+        }
+    }, [messages.length, scrollToBottom]);
+
+    // Scroll to bottom on initial load or when loading state ends
+    useEffect(() => {
+        if (!isLoading && messages.length > 0 && prevMessageCountRef.current === 0) {
+            prevMessageCountRef.current = messages.length;
+            scrollToBottom();
+        }
+    }, [isLoading, messages.length, scrollToBottom]);
+
+    // Handle scroll to detect when user scrolls to top (throttled)
+    const handleScroll = useCallback(() => {
+        // Throttle: only check every 100ms
+        const now = Date.now();
+        if (now - lastScrollCheckRef.current < 100) {
+            return;
+        }
+        lastScrollCheckRef.current = now;
+
+        // Use ref as primary guard to prevent multiple rapid calls
+        // Also skip during initial loading to prevent triggering on mount
+        if (
+            !messagesContainerRef.current ||
+            !hasMoreMessages ||
+            isLoading ||
+            isLoadingMore ||
+            isLoadingMoreRef.current ||
+            !onLoadMore ||
+            messages.length === 0
+        ) {
+            return;
+        }
+
+        const container = messagesContainerRef.current;
+        // Load more when scrolled within 100px of the top
+        // Also check that container has enough content to scroll (prevents triggering on small conversations)
+        if (container.scrollTop < 100 && container.scrollHeight > container.clientHeight) {
+            isLoadingMoreRef.current = true;
+            prevScrollHeightRef.current = container.scrollHeight;
+            onLoadMore();
+        }
+    }, [hasMoreMessages, isLoading, isLoadingMore, onLoadMore, messages.length]);
 
     // Focus input on mount
     useEffect(() => {
@@ -147,14 +226,33 @@ export default function ChatArea({
             )}
 
             {/* Messages area */}
-            <div className="flex-1 overflow-y-auto">
+            <div
+                ref={messagesContainerRef}
+                className="flex-1 overflow-y-auto"
+                onScroll={handleScroll}
+            >
                 {messages.length === 0 ? (
                     <WelcomeScreen onSuggestionClick={handleSuggestion} />
                 ) : (
                     <div className="max-w-3xl mx-auto p-4 space-y-6">
+                        {/* Loading indicator for older messages */}
+                        {isLoadingMore && (
+                            <div className="flex items-center justify-center py-4">
+                                <Loader2 className="animate-spin text-dark-500" size={20} />
+                                <span className="ml-2 text-sm text-dark-500">Loading older messages...</span>
+                            </div>
+                        )}
+
+                        {/* Load more indicator when there are more messages */}
+                        {hasMoreMessages && !isLoadingMore && (
+                            <div className="flex items-center justify-center py-2">
+                                <span className="text-xs text-dark-600">Scroll up to load more</span>
+                            </div>
+                        )}
+
                         {messages.map((message, index) => (
                             <Message
-                                key={`${message.role}-${index}-${message.timestamp || index}`}
+                                key={message.id ?? message.timestamp ?? `msg-${index}`}
                                 message={message}
                                 showTimestamp={true}
                             />

@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Sidebar from '@/components/SideBar';
 import ChatArea from '@/components/ChatArea';
 import SettingsModal from '@/components/SettingsModal';
 import { api, ApiError } from '@/lib/api';
 import type { Session, Message, StatusResponse, Citation } from '@/types';
+
+const MESSAGES_PER_PAGE = 20;
 
 export default function Home() {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -14,9 +16,17 @@ export default function Home() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [isLoadingSessions, setIsLoadingSessions] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [oldestTimestamp, setOldestTimestamp] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Refs to prevent concurrent calls
+  const isLoadingMoreRef = useRef(false);
+  const fetchInProgressRef = useRef(false);
+  const lastFetchedSessionRef = useRef<string | null>(null);
 
   // Auto-dismiss errors after 5 seconds
   useEffect(() => {
@@ -67,33 +77,104 @@ export default function Home() {
 
   // Fetch messages when session changes
   useEffect(() => {
-    const fetchMessages = async () => {
-      if (!activeSessionId) {
-        setMessages([]);
-        return;
-      }
+    if (!activeSessionId) {
+      setMessages([]);
+      setHasMoreMessages(false);
+      setOldestTimestamp(null);
+      lastFetchedSessionRef.current = null;
+      return;
+    }
 
+    // Reset fetch-in-progress if session changed
+    if (lastFetchedSessionRef.current !== activeSessionId) {
+      fetchInProgressRef.current = false;
+    }
+
+    // Skip if already fetching for this session (prevents Strict Mode double-fetch)
+    if (fetchInProgressRef.current && lastFetchedSessionRef.current === activeSessionId) {
+      return;
+    }
+
+    let cancelled = false;
+    fetchInProgressRef.current = true;
+    lastFetchedSessionRef.current = activeSessionId;
+
+    const fetchMessages = async () => {
       setIsLoadingMessages(true);
       try {
-        const data = await api.getHistory(activeSessionId);
-        // Map messages with proper typing
+        const data = await api.getHistory(activeSessionId, MESSAGES_PER_PAGE);
+
+        // Don't update state if this effect was cancelled
+        if (cancelled) return;
+
+        // Map messages with proper typing (include id for stable React keys)
         const formattedMessages: Message[] = data.messages.map((msg) => ({
+          id: msg.id,
           role: msg.role,
           content: msg.content,
           timestamp: msg.timestamp,
           citations: msg.citations,
         }));
         setMessages(formattedMessages);
+        setHasMoreMessages(data.has_more);
+        setOldestTimestamp(data.oldest_timestamp);
       } catch (err) {
+        if (cancelled) return;
         console.error('Failed to fetch messages:', err);
         setMessages([]);
+        setHasMoreMessages(false);
+        setOldestTimestamp(null);
       } finally {
-        setIsLoadingMessages(false);
+        if (!cancelled) {
+          fetchInProgressRef.current = false;
+          setIsLoadingMessages(false);
+        }
       }
     };
 
     fetchMessages();
+
+    return () => {
+      cancelled = true;
+    };
   }, [activeSessionId]);
+
+  // Load more messages (older ones)
+  const handleLoadMore = useCallback(async () => {
+    // Use both state and ref for guard - ref prevents rapid calls before state updates
+    if (
+      !activeSessionId ||
+      !hasMoreMessages ||
+      isLoadingMore ||
+      isLoadingMoreRef.current ||
+      !oldestTimestamp
+    ) {
+      return;
+    }
+
+    isLoadingMoreRef.current = true;
+    setIsLoadingMore(true);
+    try {
+      const data = await api.getHistory(activeSessionId, MESSAGES_PER_PAGE, oldestTimestamp);
+      const olderMessages: Message[] = data.messages.map((msg) => ({
+        id: msg.id,
+        role: msg.role,
+        content: msg.content,
+        timestamp: msg.timestamp,
+        citations: msg.citations,
+      }));
+
+      // Prepend older messages to the beginning
+      setMessages((prev) => [...olderMessages, ...prev]);
+      setHasMoreMessages(data.has_more);
+      setOldestTimestamp(data.oldest_timestamp);
+    } catch (err) {
+      console.error('Failed to load more messages:', err);
+    } finally {
+      isLoadingMoreRef.current = false;
+      setIsLoadingMore(false);
+    }
+  }, [activeSessionId, hasMoreMessages, isLoadingMore, oldestTimestamp]);
 
   // Create new session
   const handleNewSession = async () => {
@@ -225,7 +306,10 @@ export default function Home() {
         <ChatArea
           messages={messages}
           isLoading={isSending || isLoadingMessages}
+          isLoadingMore={isLoadingMore}
+          hasMoreMessages={hasMoreMessages}
           onSendMessage={handleSendMessage}
+          onLoadMore={handleLoadMore}
           onOpenSettings={() => setIsSettingsOpen(true)}
         />
       </main>
