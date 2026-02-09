@@ -19,23 +19,22 @@ services:
       - chroma_data:/home/appuser/app/chroma_db
       # Cache HuggingFace models
       - hf_cache:/home/appuser/app/hf_cache
-      - ./api/src:/home/appuser/app/src
-  
-      - ./api/main.py:/home/appuser/app/main.py
+      # Dev mounts
+      - ./api/src:/home/appuser/app/src:ro
+      - ./api/main.py:/home/appuser/app/main.py:ro
       - ./api/data:/home/appuser/app/data
     # Required for host.docker.internal on Linux
     extra_hosts:
       - "host.docker.internal:host-gateway"
     network_mode: host
-
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/status')" ]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/status')"]
       interval: 30s
       timeout: 10s
-      start_period: 10s
+      start_period: 60s
       retries: 3
-  
+
   web:
     build:
       context: ./web
@@ -45,9 +44,9 @@ services:
     container_name: rag-chatbot-web
     ports:
       - "3000:3000"
-
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

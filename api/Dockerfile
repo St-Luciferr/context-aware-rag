@@ -1,46 +1,66 @@
-FROM python:3.11-slim
+# Stage 1: Builder - Install dependencies
+FROM python:3.11-slim AS builder
 
 ENV PYTHONUNBUFFERED=1
-ENV VENV_PATH=/home/appuser/venv
+ENV VENV_PATH=/opt/venv
 ENV PATH="${VENV_PATH}/bin:${PATH}"
 
-# Install system deps needed for building wheels and venv
+# Install build dependencies
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-    build-essential python3-venv ca-certificates curl \
+       build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Create an unprivileged user (home: /home/appuser)
+# Create virtual environment
+RUN python -m venv ${VENV_PATH}
+
+# Copy requirements
+COPY requirements.txt ./
+
+# Install CPU-only PyTorch first (much smaller than CUDA version)
+# Then install other dependencies
+RUN ${VENV_PATH}/bin/pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && ${VENV_PATH}/bin/pip install --no-cache-dir \
+       torch --index-url https://download.pytorch.org/whl/cpu \
+    && ${VENV_PATH}/bin/pip install --no-cache-dir -r requirements.txt
+
+# Stage 2: Runtime - Minimal production image
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONUNBUFFERED=1
+ENV VENV_PATH=/opt/venv
+ENV PATH="${VENV_PATH}/bin:${PATH}"
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Install minimal runtime dependencies only
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create unprivileged user
 RUN useradd --create-home --shell /bin/bash appuser
+
+# Copy virtual environment from builder
+COPY --from=builder ${VENV_PATH} ${VENV_PATH}
 
 WORKDIR /home/appuser/app
 
-# Copy requirements first (cacheable)
-COPY requirements.txt ./
+# Create necessary directories
+RUN mkdir -p hf_cache chroma_db data \
+    && chown -R appuser:appuser /home/appuser
 
-# Copy application files and .env; set ownership at copy-time (fast)
-# NOTE: COPY --chown requires a relatively recent Docker; it's faster than chown -R
+# Copy application files
 COPY --chown=appuser:appuser src ./src
 COPY --chown=appuser:appuser main.py ./
-COPY --chown=appuser:appuser .env ./
 COPY --chown=appuser:appuser data ./data
 
-
-RUN mkdir -p /home/appuser/app/hf_cache && chown -R appuser:appuser /home/appuser/app/hf_cache
-RUN mkdir -p /home/appuser/app/chroma_db && chown -R appuser:appuser /home/appuser/app/chroma_db
-
-
+# Copy .env if exists
+COPY --chown=appuser:appuser .env* ./
 
 USER appuser
 
-# Create venv and install Python deps
-RUN python -m venv ${VENV_PATH} \
-    && ${VENV_PATH}/bin/pip install --upgrade pip setuptools wheel \
-    && ${VENV_PATH}/bin/pip install --no-cache-dir -r requirements.txt
-
-
-# Expose port and run
 EXPOSE 8000
 
-# Default command (keeps your existing main.py behavior)
 CMD ["python", "main.py"]
