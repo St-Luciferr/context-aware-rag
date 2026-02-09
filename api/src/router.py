@@ -13,15 +13,27 @@ from src.schemas import (
     MessageResponse,
     StrategiesResponse,
     ChangeStrategyRequest,
-    ChangeStrategyResponse
+    ChangeStrategyResponse,
+    TopicsResponse,
+    AddTopicRequest,
+    AddTopicResponse,
+    RemoveTopicResponse,
+    IngestResponse,
 )
 
 from src.schemas import STRATEGY_INFO
 
 from src.graph import get_chatbot
 from src.config import settings
-from src.ingest import run_ingestion
+from src.ingest import run_ingestion, add_topics_to_existing
 from src.history_manager import HistoryConfig
+from src.topics import (
+    get_topics_status,
+    get_pending_topics,
+    add_topic,
+    remove_topic,
+    reset_additional_topics,
+)
 
 router = APIRouter(prefix="", tags=["default"])
 
@@ -117,25 +129,32 @@ async def chat(request: ChatRequest):
 
 
 @router.get("/history/{session_id}", response_model=HistoryResponse)
-async def get_history(session_id: str):
-    """Get conversation history for a session."""
+async def get_history(
+    session_id: str,
+    limit: int = 20,
+    before: str = None
+):
+    """Get conversation history for a session with pagination.
+
+    Args:
+        session_id: The session ID
+        limit: Maximum number of messages to return (default 20)
+        before: Only return messages before this timestamp (ISO format) for pagination
+    """
     try:
         bot = get_chatbot(
             history_strategy=settings.history.strategy,
             history_config=history_config
         )
-        history = bot.get_history(session_id)
-        messages = []
-        for msg in history:
-            message = MessageResponse(
-                role=msg["role"],
-                content=msg["content"],
-                timestamp=msg.get("timestamp"),
-                citations=[Citation(
-                    **c) for c in msg.get("citations", [])] if msg.get("citations") else None
-            )
-            messages.append(message)
-        return HistoryResponse(session_id=session_id, messages=history)
+        result = bot.get_history_paginated(session_id, limit=limit, before_timestamp=before)
+
+        return HistoryResponse(
+            session_id=session_id,
+            messages=result["messages"],
+            has_more=result["has_more"],
+            total_count=result["total_count"],
+            oldest_timestamp=result["oldest_timestamp"]
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -208,4 +227,106 @@ async def change_strategy(request: ChangeStrategyRequest):
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Topics Endpoints ====================
+
+@router.get("/topics", response_model=TopicsResponse)
+async def get_topics():
+    """Get current Wikipedia topics with ingestion status."""
+    try:
+        status = get_topics_status()
+        return TopicsResponse(
+            topics=status["topics"],
+            total=status["total"],
+            ingested_count=status["ingested_count"],
+            pending_count=status["pending_count"]
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/topics", response_model=AddTopicResponse)
+async def add_new_topic(request: AddTopicRequest):
+    """Add a new Wikipedia topic (does not ingest immediately)."""
+    try:
+        success, message = add_topic(request.topic)
+
+        if not success:
+            raise HTTPException(status_code=400, detail=message)
+
+        return AddTopicResponse(success=success, message=message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/topics/{topic}", response_model=RemoveTopicResponse)
+async def delete_topic(topic: str):
+    """Remove a Wikipedia topic (only additional topics can be removed)."""
+    try:
+        success, message = remove_topic(topic)
+
+        if not success:
+            raise HTTPException(status_code=400, detail=message)
+
+        return RemoveTopicResponse(success=success, message=message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/topics/reset", response_model=AddTopicResponse)
+async def reset_topics_to_default():
+    """Remove all additional topics, keeping only defaults."""
+    try:
+        success, message = reset_additional_topics()
+        return AddTopicResponse(success=success, message=message)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/topics/ingest", response_model=IngestResponse)
+async def ingest_pending_topics():
+    """Ingest only pending topics (incremental - adds to existing collection)."""
+    try:
+        pending = get_pending_topics()
+
+        if not pending:
+            return IngestResponse(
+                status="skipped",
+                message="No pending topics to ingest. All topics are already in the knowledge base.",
+                document_count=0
+            )
+
+        result = add_topics_to_existing(pending)
+
+        return IngestResponse(
+            status=result.get("status", "error"),
+            message=result.get("message", "Unknown error"),
+            document_count=result.get("document_count"),
+            chunks_added=result.get("chunks_added"),
+            topics_added=result.get("topics_added")
+        )
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/topics/ingest/full", response_model=IngestResponse)
+async def full_reingest():
+    """Full re-ingestion - deletes existing collection and re-ingests all topics."""
+    try:
+        result = run_ingestion(force=True)
+
+        return IngestResponse(
+            status=result.get("status", "error"),
+            message=result.get("message", "Unknown error"),
+            document_count=result.get("document_count")
+        )
+    except Exception as e:
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))

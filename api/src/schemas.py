@@ -64,6 +64,9 @@ class ChatResponse(BaseModel):
 class HistoryResponse(BaseModel):
     session_id: str
     messages: list[dict]
+    has_more: bool = False
+    total_count: int = 0
+    oldest_timestamp: Optional[str] = None
 
 
 class StatusResponse(BaseModel):
@@ -120,3 +123,46 @@ STRATEGY_INFO = {
         settings={"summarize_after": 8, "summary_max_tokens": 500}
     ),
 }
+
+
+# ==================== Topics Schemas ====================
+
+class TopicInfo(BaseModel):
+    """Information about a single topic."""
+    name: str
+    is_default: bool
+    is_ingested: bool
+
+
+class TopicsResponse(BaseModel):
+    """Response containing current Wikipedia topics with status."""
+    topics: list[TopicInfo]
+    total: int
+    ingested_count: int
+    pending_count: int
+
+
+class AddTopicRequest(BaseModel):
+    """Request to add a new Wikipedia topic."""
+    topic: str
+
+
+class AddTopicResponse(BaseModel):
+    """Response after adding a topic."""
+    success: bool
+    message: str
+
+
+class RemoveTopicResponse(BaseModel):
+    """Response after removing a topic."""
+    success: bool
+    message: str
+
+
+class IngestResponse(BaseModel):
+    """Response from ingestion operation."""
+    status: str
+    message: str
+    document_count: Optional[int] = None
+    chunks_added: Optional[int] = None
+    topics_added: Optional[list[str]] = None
