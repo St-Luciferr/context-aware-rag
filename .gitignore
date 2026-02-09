@@ -17,5 +17,6 @@ build/
 # Local data (will be mounted as volumes)
 chroma_db/
 *.db
+data/
 *test.py
 *.pptx
