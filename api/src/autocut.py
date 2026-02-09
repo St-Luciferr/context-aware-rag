@@ -6,8 +6,20 @@ Removes redundant content from retrieved documents
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
-from typing import List, Dict
+from typing import List, Dict, Any
 from src.config import settings
+
+# LangSmith tracing support
+try:
+    from langsmith import traceable
+    LANGSMITH_AVAILABLE = True
+except ImportError:
+    LANGSMITH_AVAILABLE = False
+    # Provide a no-op decorator if langsmith is not installed
+    def traceable(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 
 class AutoCut:
@@ -32,11 +44,16 @@ class AutoCut:
         self.similarity_threshold = similarity_threshold
         self.max_chunks = max_chunks
 
+    @traceable(
+        name="autocut_distill",
+        run_type="chain",
+        metadata={"component": "autocut", "method": "distill"}
+    )
     def distill(
         self,
         query: str,
-        retrieved_chunks: List[Dict[str, any]]
-    ) -> List[Dict[str, any]]:
+        retrieved_chunks: List[Any]
+    ) -> List[Any]:
         """
         Main distillation method
 
@@ -125,12 +142,17 @@ class AutoCut:
         max_similarity = np.max(similarities)
         return max_similarity > self.similarity_threshold
 
+    @traceable(
+        name="autocut_distill_mmr",
+        run_type="chain",
+        metadata={"component": "autocut", "method": "distill_with_mmr"}
+    )
     def distill_with_mmr(
         self,
         query: str,
-        retrieved_chunks: List[any],
+        retrieved_chunks: List[Any],
         lambda_param: float = 0.7
-    ) -> List[any]:
+    ) -> List[Any]:
         """
         Distill using Maximal Marginal Relevance (MMR)
         Balances relevance and diversity

@@ -30,6 +30,20 @@ from src.history_manager import (
 
 import logging
 
+# LangSmith tracing support
+try:
+    from langsmith import traceable
+    from langsmith.run_helpers import get_current_run_tree
+    LANGSMITH_AVAILABLE = True
+except ImportError:
+    LANGSMITH_AVAILABLE = False
+    def traceable(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    def get_current_run_tree():
+        return None
+
 logger = logging.getLogger(__name__)
 
 DEBUG = False
@@ -188,19 +202,64 @@ class RAGChatbot:
 
     def refresh_bm25_index(self):
         """
-        Refresh BM25 index when documents are added/updated.
+        Refresh all retrieval components when documents are added/updated.
         Call this after adding new documents to ChromaDB.
         """
+        # Refresh vector store connection to ensure we see new documents
+        self.vector_store = self._load_vector_store()
         self.bm25_retriever = self._init_bm25_retriever()
         self.ensemble_retriever = self._init_ensemble_retriever()
+
+    def _format_docs_for_trace(self, docs: List[Document]) -> List[Dict[str, Any]]:
+        """Format documents for LangSmith trace output."""
+        return [
+            {
+                "title": doc.metadata.get("title", "Unknown"),
+                "source": doc.metadata.get("source", "unknown"),
+                "chunk_id": doc.metadata.get("chunk_id"),
+                "relevance_score": doc.metadata.get("relevance_score"),
+                "content_preview": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content
+            }
+            for doc in docs
+        ]
 
     def _retrieve_context(self, state: ChatState) -> ChatState:
         """Retrieve relevant context using hybrid search with citation tracking."""
         query = state["current_query"]
         start_time = time.time()
-        docs = self.hybrid_search(query, k=settings.rag.retrieval_k)
-        docs = self.autocut.distill(query, docs)
-        print(f"Distilled to {len(docs)} documents")
+
+        # Hybrid search retrieval
+        raw_docs = self.hybrid_search(query, k=settings.rag.retrieval_k)
+
+        # Log autocut input for tracing
+        autocut_input = {
+            "query": query,
+            "input_doc_count": len(raw_docs),
+            "input_docs": self._format_docs_for_trace(raw_docs)
+        }
+
+        # Apply autocut distillation
+        docs = self.autocut.distill(query, raw_docs)
+
+        # Log autocut output for tracing
+        autocut_output = {
+            "output_doc_count": len(docs),
+            "docs_removed": len(raw_docs) - len(docs),
+            "output_docs": self._format_docs_for_trace(docs)
+        }
+
+        # Add trace metadata if LangSmith is available
+        if LANGSMITH_AVAILABLE:
+            try:
+                run_tree = get_current_run_tree()
+                if run_tree:
+                    run_tree.metadata = run_tree.metadata or {}
+                    run_tree.metadata["autocut_input"] = autocut_input
+                    run_tree.metadata["autocut_output"] = autocut_output
+            except Exception:
+                pass  # Silently ignore tracing errors
+
+        print(f"Distilled {len(raw_docs)} → {len(docs)} documents")
 
         if not docs:
             return {
@@ -427,6 +486,28 @@ You are an AI research assistant specialized in Artificial Intelligence and Mach
     def get_history(self, session_id: str) -> list[dict]:
         """Get conversation history for a session."""
         return self.storage.load_messages(session_id)
+
+    def get_history_paginated(
+        self,
+        session_id: str,
+        limit: int = 20,
+        before_timestamp: str = None
+    ) -> dict:
+        """Get paginated conversation history for a session.
+
+        Args:
+            session_id: The session ID
+            limit: Maximum number of messages to return
+            before_timestamp: Only return messages before this timestamp
+
+        Returns:
+            Dict with messages, has_more, total_count, oldest_timestamp
+        """
+        return self.storage.load_messages_paginated(
+            session_id,
+            limit=limit,
+            before_timestamp=before_timestamp
+        )
 
     def get_all_sessions(self) -> list[dict]:
         """Get information about all active sessions."""
