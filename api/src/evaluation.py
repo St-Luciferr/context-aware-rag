@@ -3,6 +3,20 @@ LangSmith Evaluation Module for RAG Pipeline
 
 Provides utilities for creating evaluation datasets and running evaluations
 to measure RAG pipeline quality.
+
+This module provides LangSmith integration. For comprehensive RAG evaluation
+with retrieval and generation metrics, see the evaluation package:
+    from src.evaluation import quick_evaluate, generate_report
+
+Quick start:
+    # CLI
+    python -m src.evaluation.cli generate --name my_dataset --questions 5
+    python -m src.evaluation.cli run --dataset my_dataset --report
+
+    # API
+    POST /api/v1/eval/dataset/generate
+    POST /api/v1/eval/run
+    GET /api/v1/eval/results/{run_id}/report
 """
 
 from typing import Optional
@@ -163,3 +177,65 @@ def get_langsmith_status() -> dict:
         "project": settings.langsmith.project if settings.langsmith.is_configured else None,
         "endpoint": settings.langsmith.endpoint if settings.langsmith.is_configured else None,
     }
+
+
+# ==================== Comprehensive Evaluation Functions ====================
+
+def quick_evaluate(
+    dataset_name: str = "quick_eval",
+    questions_per_topic: int = 3
+) -> dict:
+    """Run a quick end-to-end evaluation and return summary.
+
+    This is a convenience function that:
+    1. Generates an evaluation dataset (if not exists)
+    2. Runs the full evaluation pipeline
+    3. Returns a summary of results
+
+    Args:
+        dataset_name: Name for the evaluation dataset
+        questions_per_topic: Questions to generate per topic
+
+    Returns:
+        Dictionary with evaluation summary including retrieval and generation metrics
+    """
+    from src.evaluation.dataset import DatasetGenerator
+    from src.evaluation.runner import EvaluationRunner, get_evaluation_summary
+
+    generator = DatasetGenerator()
+    dataset = generator.load_dataset(dataset_name)
+
+    if not dataset:
+        logger.info(f"Generating dataset '{dataset_name}'...")
+        dataset = generator.generate_dataset(
+            name=dataset_name,
+            questions_per_topic=questions_per_topic
+        )
+
+    logger.info("Running evaluation...")
+    runner = EvaluationRunner()
+    results = runner.run_evaluation(dataset)
+
+    return get_evaluation_summary(results)
+
+
+def generate_evaluation_report(run_id: str) -> str:
+    """Generate an HTML report for evaluation results.
+
+    Args:
+        run_id: The evaluation run ID
+
+    Returns:
+        Path to the generated HTML report
+    """
+    from src.evaluation.runner import EvaluationRunner
+    from src.evaluation.dashboard import ReportGenerator
+
+    runner = EvaluationRunner()
+    results = runner.load_results(run_id)
+
+    if not results:
+        raise ValueError(f"Results for run '{run_id}' not found")
+
+    report_gen = ReportGenerator()
+    return report_gen.generate_html_report(results)
