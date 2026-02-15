@@ -107,11 +107,19 @@ Respond in exactly this JSON format:
             llm: ChatOllama instance for LLM-as-judge. If None, uses settings.
             embeddings: HuggingFace embeddings for semantic similarity.
         """
-        self.llm = llm or ChatOllama(
-            model=settings.ollama.model,
-            base_url=settings.ollama.base_url,
-            temperature=0.1,  # Low temperature for consistent evaluation
-        )
+        if llm:
+            self.llm = llm
+        else:
+            # Support for cloud models with API key
+            client_kwargs = {
+                "headers": {'Authorization': 'Bearer ' + settings.ollama.api_key}
+            } if settings.ollama.api_key else {}
+            self.llm = ChatOllama(
+                model=settings.ollama.model,
+                base_url=settings.ollama.base_url,
+                temperature=0.1,  # Low temperature for consistent evaluation
+                client_kwargs=client_kwargs
+            )
         self.embeddings = embeddings or self._init_embeddings()
 
     def _init_embeddings(self) -> HuggingFaceEmbeddings:

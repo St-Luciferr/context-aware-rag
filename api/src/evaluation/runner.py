@@ -113,7 +113,7 @@ class EvaluationRunner:
         contexts = []
         for doc in docs:
             doc_id = doc.metadata.get("chunk_id") or doc.metadata.get("id", "")
-            doc_ids.append(doc_id)
+            doc_ids.append(str(doc_id))  # Ensure string type
             contexts.append(doc.page_content)
 
         return doc_ids, contexts, elapsed_ms

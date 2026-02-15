@@ -80,10 +80,15 @@ Respond in exactly this JSON format:
 {{"question": "your explanatory question here", "answer": "the explanation based on the context"}}"""
 
     def __init__(self):
+        client_kwargs = {
+            "headers": {'Authorization': 'Bearer ' + settings.ollama.api_key}
+        } if settings.ollama.api_key else {}
         self.llm = ChatOllama(
             model=settings.ollama.model,
             base_url=settings.ollama.base_url,
-            temperature=0.7,
+            temperature=settings.ollama.temperature,
+            keep_alive=-1,
+            client_kwargs=client_kwargs
         )
         self._ensure_dirs()
 
