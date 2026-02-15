@@ -166,3 +166,118 @@ class IngestResponse(BaseModel):
     document_count: Optional[int] = None
     chunks_added: Optional[int] = None
     topics_added: Optional[list[str]] = None
+
+
+# ==================== Evaluation Schemas ====================
+
+class DatasetGenerateRequest(BaseModel):
+    """Request to generate an evaluation dataset."""
+    name: str = Field(..., description="Name for the dataset")
+    questions_per_topic: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Number of questions to generate per topic"
+    )
+    question_types: list[str] = Field(
+        default=["factual", "comparative", "explanatory"],
+        description="Types of questions to generate"
+    )
+
+
+class DatasetInfo(BaseModel):
+    """Information about an evaluation dataset."""
+    name: str
+    created_at: Optional[str] = None
+    question_count: int
+    topics: list[str]
+
+
+class DatasetListResponse(BaseModel):
+    """Response containing available evaluation datasets."""
+    datasets: list[DatasetInfo]
+    total: int
+
+
+class DatasetGenerateResponse(BaseModel):
+    """Response after generating a dataset."""
+    success: bool
+    name: str
+    question_count: int
+    topics_covered: list[str]
+    message: str
+
+
+class EvalRunRequest(BaseModel):
+    """Request to run an evaluation."""
+    dataset_name: str = Field(..., description="Name of the dataset to evaluate")
+    experiment_name: Optional[str] = Field(
+        None,
+        description="Optional name for this evaluation experiment"
+    )
+
+
+class MetricSummary(BaseModel):
+    """Summary statistics for a metric."""
+    mean: float
+    std: float
+    min: float
+    max: float
+
+
+class EvalRunResponse(BaseModel):
+    """Response after running an evaluation."""
+    success: bool
+    run_id: str
+    dataset_name: str
+    total_questions: int
+    successful_questions: int
+    failed_questions: int
+    total_time_seconds: float
+    message: str
+
+
+class EvalResultInfo(BaseModel):
+    """Summary info about an evaluation result."""
+    run_id: str
+    dataset_name: Optional[str] = None
+    timestamp: Optional[str] = None
+    total_questions: int
+    successful_questions: int
+    model: Optional[str] = None
+
+
+class EvalResultsListResponse(BaseModel):
+    """Response containing available evaluation results."""
+    results: list[EvalResultInfo]
+    total: int
+
+
+class EvalSummaryResponse(BaseModel):
+    """Detailed summary of an evaluation run."""
+    run_id: str
+    dataset: str
+    model: Optional[str] = None
+    timestamp: Optional[str] = None
+    questions: dict
+    timing: dict
+    retrieval: Optional[dict] = None
+    generation: Optional[dict] = None
+
+
+class EvalReportResponse(BaseModel):
+    """Response containing path to generated report."""
+    success: bool
+    run_id: str
+    report_path: str
+    message: str
+
+
+class EvalCompareRequest(BaseModel):
+    """Request to compare multiple evaluation runs."""
+    run_ids: list[str] = Field(
+        ...,
+        min_length=2,
+        max_length=5,
+        description="List of run IDs to compare"
+    )
