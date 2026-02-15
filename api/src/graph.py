@@ -37,10 +37,12 @@ try:
     LANGSMITH_AVAILABLE = True
 except ImportError:
     LANGSMITH_AVAILABLE = False
+
     def traceable(*args, **kwargs):
         def decorator(func):
             return func
         return decorator
+
     def get_current_run_tree():
         return None
 
@@ -151,9 +153,11 @@ class RAGChatbot:
             Document(page_content=doc, metadata=meta)
             for doc, meta in zip(raw_docs["documents"], raw_docs["metadatas"])
         ]
-
-        # BM25Retriever
-        return BM25Retriever.from_documents(documents=documents, k=k)
+        if len(documents) > 0:
+            # BM25Retriever
+            return BM25Retriever.from_documents(documents=documents, k=k)
+        else:
+            return None
 
     def _init_ensemble_retriever(self, k: int = settings.rag.retrieval_k) -> EnsembleRetriever:
         """Initialize ensemble retriever combining vector and BM25 search."""

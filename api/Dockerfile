@@ -8,7 +8,7 @@ ENV PATH="${VENV_PATH}/bin:${PATH}"
 # Install build dependencies
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       build-essential \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Create virtual environment
@@ -21,7 +21,7 @@ COPY requirements.txt ./
 # Then install other dependencies
 RUN ${VENV_PATH}/bin/pip install --no-cache-dir --upgrade pip setuptools wheel \
     && ${VENV_PATH}/bin/pip install --no-cache-dir \
-       torch --index-url https://download.pytorch.org/whl/cpu \
+    torch --index-url https://download.pytorch.org/whl/cpu \
     && ${VENV_PATH}/bin/pip install --no-cache-dir -r requirements.txt
 
 # Stage 2: Runtime - Minimal production image
@@ -35,7 +35,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # Install minimal runtime dependencies only
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       ca-certificates \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -54,7 +54,7 @@ RUN mkdir -p hf_cache chroma_db data \
 # Copy application files
 COPY --chown=appuser:appuser src ./src
 COPY --chown=appuser:appuser main.py ./
-COPY --chown=appuser:appuser data ./data
+COPY --chown=appuser:appuser data* ./data/
 
 # Copy .env if exists
 COPY --chown=appuser:appuser .env* ./

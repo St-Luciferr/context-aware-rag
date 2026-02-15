@@ -26,7 +26,8 @@ def configure_langsmith() -> bool:
         os.environ["LANGCHAIN_API_KEY"] = settings.langsmith.api_key
         os.environ["LANGCHAIN_PROJECT"] = settings.langsmith.project
         os.environ["LANGCHAIN_ENDPOINT"] = settings.langsmith.endpoint
-        print(f"LangSmith tracing enabled for project: {settings.langsmith.project}")
+        print(
+            f"LangSmith tracing enabled for project: {settings.langsmith.project}")
         return True
     else:
         # Explicitly disable to avoid accidental tracing
@@ -45,10 +46,7 @@ async def lifespan(app: FastAPI):
     # Configure LangSmith BEFORE initializing chatbot
     configure_langsmith()
 
-    # Initialize chatbot at startup
-    _ = get_chatbot()
-    print("Chatbot initialized and ready!")
-
+    # Ingest initial documents
     result = run_ingestion()
     if result.get("status") == "success":
         print(f"{result.get('message')} document_count: {result.get('document_count')}")
@@ -58,6 +56,9 @@ async def lifespan(app: FastAPI):
     else:
         print(f"Error in Ingestion: {result.get('message')}")
 
+    # Initialize chatbot at startup
+    _ = get_chatbot()
+    print("Chatbot initialized and ready!")
     yield
 
     print("🛑 Shutting down chatbot...")
