@@ -103,6 +103,12 @@ class RAGSettings(BaseSettings):
     retrieval_k: int = Field(default=5, ge=1, le=20, alias="RAG_RETRIEVAL_K")
     distilled_retrieval_k: int = Field(
         default=3, ge=1, le=5, alias="DISTILLED_RETRIEVAL_K")
+    # AutoCut distillation - disable if using MMR (redundant)
+    autocut_enabled: bool = Field(
+        default=True,
+        alias="AUTOCUT_ENABLED",
+        description="Enable AutoCut post-retrieval filtering (may be redundant with MMR)"
+    )
     # Semantic chunker settings
     breakpoint_threshold_type: str = Field(
         default="percentile",
@@ -226,6 +232,65 @@ class EvaluationSettings(BaseSettings):
     )
 
 
+class ToolCallingSettings(BaseSettings):
+    """LLM tool calling configuration."""
+
+    enabled: bool = Field(
+        default=False,
+        alias="TOOL_CALLING_ENABLED",
+        description="Enable LLM tool calling capabilities"
+    )
+    max_iterations: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        alias="TOOL_MAX_ITERATIONS",
+        description="Maximum tool calling iterations per query"
+    )
+    enabled_tools: str = Field(
+        default="retrieve_documents,web_search,clarify_query",
+        alias="TOOLS_ENABLED",
+        description="Comma-separated list of enabled tool names"
+    )
+
+    # Web search settings
+    web_search_provider: str = Field(
+        default="duckduckgo",
+        alias="WEB_SEARCH_PROVIDER",
+        description="Web search provider: duckduckgo, serpapi, tavily"
+    )
+    serpapi_key: str = Field(
+        default="",
+        alias="SERPAPI_KEY",
+        description="SerpAPI key for web search"
+    )
+    tavily_key: str = Field(
+        default="",
+        alias="TAVILY_KEY",
+        description="Tavily API key for web search"
+    )
+    web_search_max_results: int = Field(
+        default=5,
+        ge=1,
+        le=10,
+        alias="WEB_SEARCH_MAX_RESULTS"
+    )
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    @property
+    def enabled_tools_list(self) -> list[str]:
+        """Get enabled tools as a list."""
+        if isinstance(self.enabled_tools, list):
+            return self.enabled_tools
+        return [t.strip() for t in self.enabled_tools.split(",") if t.strip()]
+
+
 class Settings(BaseSettings):
     """Main settings class combining all configuration sections."""
 
@@ -245,6 +310,7 @@ class Settings(BaseSettings):
     history: HistorySettings = Field(default_factory=HistorySettings)
     langsmith: LangSmithSettings = Field(default_factory=LangSmithSettings)
     evaluation: EvaluationSettings = Field(default_factory=EvaluationSettings)
+    tools: ToolCallingSettings = Field(default_factory=ToolCallingSettings)
     env: str = Field(default='dev', alias="ENV")
     workers: int = Field(default=1, alias="WORKERS")
 
