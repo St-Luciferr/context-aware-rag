@@ -11,7 +11,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_ollama import ChatOllama
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage, ToolMessage
 from langchain_core.documents import Document
 from langchain_community.retrievers import BM25Retriever
 from langchain_classic.retrievers import EnsembleRetriever
@@ -57,6 +57,10 @@ class ChatState(TypedDict):
     context: str
     current_query: str
     citations: list[dict]
+    # Tool calling state
+    tool_calls: list[dict]  # Pending tool calls from LLM
+    tool_results: list[str]  # Results from executed tools
+    tool_iterations: int  # Number of tool calling iterations
 
 
 @dataclass
@@ -126,14 +130,37 @@ class RAGChatbot:
         client_kwargs = {
             "headers": {'Authorization': 'Bearer ' + settings.ollama.api_key}
         } if settings.ollama.api_key else {}
-        return ChatOllama(
+        llm = ChatOllama(
             model=settings.ollama.model,
             base_url=settings.ollama.base_url,
             temperature=settings.ollama.temperature,
             keep_alive=-1,
             client_kwargs=client_kwargs
-
         )
+
+        # Bind tools if tool calling is enabled
+        if settings.tools.enabled:
+            llm = self._bind_tools(llm)
+
+        return llm
+
+    def _bind_tools(self, llm: ChatOllama) -> ChatOllama:
+        """Bind enabled tools to the LLM."""
+        try:
+            from src.tools import get_enabled_tools
+            tools = get_enabled_tools()
+            if tools:
+                logger.info(f"Binding {len(tools)} tools to LLM: {[t.name for t in tools]}")
+                return llm.bind_tools(tools)
+            else:
+                logger.warning("Tool calling enabled but no tools found")
+                return llm
+        except ImportError as e:
+            logger.error(f"Could not import tools: {e}")
+            return llm
+        except Exception as e:
+            logger.error(f"Error binding tools: {e}")
+            return llm
 
     def _load_vector_store(self) -> Chroma:
         """Load existing ChromaDB vector store."""
@@ -201,7 +228,6 @@ class RAGChatbot:
             docs = ensemble_retriever.invoke(query)
         else:
             docs = self.ensemble_retriever.invoke(query)
-        print(f"retrieved {len(docs)} doduments")
         return docs
 
     def refresh_bm25_index(self):
@@ -235,22 +261,28 @@ class RAGChatbot:
         # Hybrid search retrieval
         raw_docs = self.hybrid_search(query, k=settings.rag.retrieval_k)
 
-        # Log autocut input for tracing
-        autocut_input = {
-            "query": query,
-            "input_doc_count": len(raw_docs),
-            "input_docs": self._format_docs_for_trace(raw_docs)
-        }
+        # Apply autocut distillation if enabled (may be redundant with MMR)
+        if settings.rag.autocut_enabled:
+            # Log autocut input for tracing
+            autocut_input = {
+                "query": query,
+                "input_doc_count": len(raw_docs),
+                "input_docs": self._format_docs_for_trace(raw_docs)
+            }
 
-        # Apply autocut distillation
-        docs = self.autocut.distill(query, raw_docs)
+            docs = self.autocut.distill(query, raw_docs)
 
-        # Log autocut output for tracing
-        autocut_output = {
-            "output_doc_count": len(docs),
-            "docs_removed": len(raw_docs) - len(docs),
-            "output_docs": self._format_docs_for_trace(docs)
-        }
+            # Log autocut output for tracing
+            autocut_output = {
+                "output_doc_count": len(docs),
+                "docs_removed": len(raw_docs) - len(docs),
+                "output_docs": self._format_docs_for_trace(docs)
+            }
+        else:
+            # Skip AutoCut - MMR already provides diversity
+            docs = raw_docs[:settings.rag.distilled_retrieval_k]  # Just take top-k
+            autocut_input = {}
+            autocut_output = {"skipped": True, "reason": "AUTOCUT_ENABLED=false"}
 
         # Add trace metadata if LangSmith is available
         if LANGSMITH_AVAILABLE:
@@ -262,8 +294,6 @@ class RAGChatbot:
                     run_tree.metadata["autocut_output"] = autocut_output
             except Exception:
                 pass  # Silently ignore tracing errors
-
-        print(f"Distilled {len(raw_docs)} → {len(docs)} documents")
 
         if not docs:
             return {
@@ -316,13 +346,202 @@ class RAGChatbot:
 
         context = "\n\n".join(context_parts)
 
-        print(f"Context Retrieved in {time.time()-start_time} Seconds")
+        autocut_status = f"-> {len(docs)}" if settings.rag.autocut_enabled else "(no autocut)"
+        print(f"[Retrieval] {len(raw_docs)} docs {autocut_status} ({time.time()-start_time:.2f}s)")
 
         return {
             "context": context,
             "citations": citations,
             "messages": state["messages"],
             "current_query": query
+        }
+
+    def _execute_tools(self, state: ChatState) -> ChatState:
+        """Execute tool calls and return results."""
+        tool_calls = state.get("tool_calls", [])
+
+        if not tool_calls:
+            return state
+
+        print(f"[Tools] Executing {len(tool_calls)} tool(s)")
+
+        tool_results = []
+        new_messages = []  # Only new ToolMessages (state uses 'add' operator)
+
+        try:
+            from src.tools import get_all_tools
+            tools_dict = get_all_tools()
+        except ImportError:
+            logger.error("Could not import tools for execution")
+            return state
+
+        for i, tool_call in enumerate(tool_calls, 1):
+            tool_name = tool_call.get("name", "")
+            tool_args = tool_call.get("args", {})
+            tool_id = tool_call.get("id", "")
+
+            print(f"  - {tool_name}({tool_args})")
+
+            tool_func = tools_dict.get(tool_name)
+            if tool_func:
+                try:
+                    result = tool_func.invoke(tool_args)
+                    result_len = len(str(result))
+                    print(f"    OK: {result_len} chars")
+                    tool_results.append(result)
+                    new_messages.append(ToolMessage(
+                        content=str(result),
+                        tool_call_id=tool_id
+                    ))
+                except Exception as e:
+                    error_msg = f"Error: {str(e)}"
+                    print(f"    FAILED: {error_msg}")
+                    logger.error(f"Tool {tool_name} failed: {e}")
+                    tool_results.append(error_msg)
+                    new_messages.append(ToolMessage(
+                        content=error_msg,
+                        tool_call_id=tool_id
+                    ))
+            else:
+                print(f"    FAILED: Tool not found")
+                logger.warning(f"Tool '{tool_name}' not found")
+                tool_results.append(f"Tool '{tool_name}' not found")
+                new_messages.append(ToolMessage(
+                    content=f"Tool '{tool_name}' not found",
+                    tool_call_id=tool_id
+                ))
+
+        return {
+            **state,
+            "messages": new_messages,
+            "tool_calls": [],
+            "tool_results": tool_results,
+            "tool_iterations": state.get("tool_iterations", 0) + 1
+        }
+
+    def _should_continue_tools(self, state: ChatState) -> str:
+        """Determine if tool loop should continue or end."""
+        messages = state.get("messages", [])
+        tool_iterations = state.get("tool_iterations", 0)
+        max_iterations = settings.tools.max_iterations
+
+        # Check iteration limit
+        if tool_iterations >= max_iterations:
+            logger.info(f"Tool iteration limit reached ({max_iterations})")
+            return "end"
+
+        # Check if last message has tool calls
+        if messages:
+            last_msg = messages[-1]
+            if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
+                return "execute_tools"
+
+        return "end"
+
+    def _generate_with_tools(self, state: ChatState) -> ChatState:
+        """Generate response that may include tool calls."""
+        start_time = time.time()
+        context = state.get("context", "")
+        citations = state.get("citations", [])
+        query = state.get("current_query", "")
+
+        # Build system prompt with tool usage guidance
+        system_prompt = f"""## Role
+You are an AI assistant that provides accurate, factual information. You MUST NOT make up or assume information.
+
+## Critical Rules
+1. NEVER fabricate, assume, or hallucinate information
+2. ONLY use information from the provided context OR from tool results
+3. If the context does not contain the answer, you MUST use a tool to find it
+4. If you cannot find information even after using tools, say "I don't have information about that"
+
+## Available Tools - USE THEM
+- retrieve_documents: Search the knowledge base for more documents
+- web_search: Search the web for current information (USE THIS for topics not in context)
+- clarify_query: Ask the user for clarification if the question is unclear
+
+## When to Use Tools
+- Topic NOT in the provided context -> USE web_search or retrieve_documents
+- Question about recent events/news -> USE web_search
+- Technical term or concept you're unsure about -> USE web_search
+- Ambiguous question -> USE clarify_query
+
+## Response Rules
+- Cite sources using [1], [2], etc. when using context
+- Be concise (2-4 paragraphs)
+- If unsure, USE A TOOL rather than guessing
+
+## Knowledge Base Context
+{context}
+
+## User Question
+{query}
+"""
+
+        messages: List[Any] = [SystemMessage(content=system_prompt)]
+        previous_messages = state.get("messages") or []
+
+        # Filter and fix messages to ensure they're valid for Ollama
+        for msg in (previous_messages if isinstance(previous_messages, list) else []):
+            if isinstance(msg, AIMessage):
+                # Ensure AIMessage has content or valid tool_calls
+                content = getattr(msg, 'content', '') or ''
+                has_tool_calls = hasattr(msg, 'tool_calls') and msg.tool_calls
+
+                if not content and not has_tool_calls:
+                    # Skip empty AIMessages
+                    logger.warning("Skipping empty AIMessage without content or tool_calls")
+                    logger.debug(f"Invalid AIMessage: {msg}")
+                    continue
+
+                # If AIMessage has tool_calls but empty content, add placeholder
+                if has_tool_calls and not content:
+                    msg = AIMessage(
+                        content="[Calling tools...]",
+                        tool_calls=msg.tool_calls
+                    )
+
+            messages.append(msg)
+
+        try:
+            response = self.llm.invoke(messages)
+        except Exception as exc:
+            logger.exception(f"LLM invocation failed: {exc}")
+            return {
+                **state,
+                "messages": [AIMessage(content="I'm sorry — I couldn't generate a response.")],
+                "tool_calls": []
+            }
+
+        # Check for tool calls in response
+        tool_calls = []
+        if hasattr(response, 'tool_calls') and response.tool_calls:
+            for tc in response.tool_calls:
+                # Handle both dict and object formats
+                if isinstance(tc, dict):
+                    tool_calls.append({
+                        "id": tc.get("id", ""),
+                        "name": tc.get("name", ""),
+                        "args": tc.get("args", {})
+                    })
+                else:
+                    # Object format (e.g., ToolCall namedtuple)
+                    tool_calls.append({
+                        "id": getattr(tc, "id", ""),
+                        "name": getattr(tc, "name", ""),
+                        "args": getattr(tc, "args", {})
+                    })
+            tool_names = [t['name'] for t in tool_calls]
+            print(f"[LLM] Calling tools: {tool_names}")
+            logger.info(f"LLM requested tools: {tool_names}")
+
+        print(f"[LLM] Generation: {time.time()-start_time:.2f}s")
+
+        return {
+            **state,
+            "messages": [response],
+            "tool_calls": tool_calls,
+            "citations": citations
         }
 
     def _generate_response(self, state: ChatState) -> ChatState:
@@ -387,17 +606,40 @@ You are an AI research assistant specialized in Artificial Intelligence and Mach
         }
 
     def _build_graph(self) -> CompiledStateGraph:
-        """Build the LangGraph state machine."""
+        """Build the LangGraph state machine with optional tool calling."""
         workflow = StateGraph(ChatState)
 
         # Add nodes
         workflow.add_node("retrieve", self._retrieve_context)
-        workflow.add_node("generate", self._generate_response)
 
-        # Add edges
-        workflow.set_entry_point("retrieve")
-        workflow.add_edge("retrieve", "generate")
-        workflow.add_edge("generate", END)
+        if settings.tools.enabled:
+            # Tool-enabled flow: retrieve -> generate_with_tools -> (conditional) -> execute_tools | END
+            workflow.add_node("generate_with_tools", self._generate_with_tools)
+            workflow.add_node("execute_tools", self._execute_tools)
+
+            # Add edges
+            workflow.set_entry_point("retrieve")
+            workflow.add_edge("retrieve", "generate_with_tools")
+
+            # Conditional edge after generate_with_tools
+            # If tool calls exist -> execute_tools, otherwise -> END (response is complete)
+            workflow.add_conditional_edges(
+                "generate_with_tools",
+                self._should_continue_tools,
+                {
+                    "execute_tools": "execute_tools",
+                    "end": END
+                }
+            )
+
+            # After executing tools, go back to generate_with_tools for the response
+            workflow.add_edge("execute_tools", "generate_with_tools")
+        else:
+            # Standard flow without tools: retrieve -> generate -> END
+            workflow.add_node("generate", self._generate_response)
+            workflow.set_entry_point("retrieve")
+            workflow.add_edge("retrieve", "generate")
+            workflow.add_edge("generate", END)
 
         return workflow.compile()
 
@@ -411,23 +653,25 @@ You are an AI research assistant specialized in Artificial Intelligence and Mach
         full_history = self._load_history_as_messages(session_id)
         human_msg = HumanMessage(content=user_message)
         full_history.append(human_msg)
-        print("Optimizing the history")
         start_time = time.time()
         optimized_history = self.history_manager.filter_history(
             messages=full_history,
             current_query=user_message
         )
-        print(f"Optimization Complete in {time.time()-start_time} Seconds")
+        print(f"[History] {len(full_history)} msgs -> {len(optimized_history)} optimized ({time.time()-start_time:.2f}s)")
+
         # Prepare initial state
         initial_state: ChatState = {
             "messages": optimized_history,
             "context": "",
             "current_query": user_message,
-            "citations": []
+            "citations": [],
+            "tool_calls": [],
+            "tool_results": [],
+            "tool_iterations": 0
         }
 
         # Run the graph with tracing metadata for LangSmith
-        print("Generating Response")
         start_time = time.time()
         result = self.graph.invoke(
             initial_state,
@@ -442,7 +686,7 @@ You are an AI research assistant specialized in Artificial Intelligence and Mach
                 "tags": ["rag", "chat", self.get_current_strategy()],
             }
         )
-        print(f"Generation Complete in {time.time()-start_time} Seconds")
+        print(f"[Done] Response generated in {time.time()-start_time:.2f}s")
 
         # Extract AI response
         ai_messages = [m for m in result["messages"]
