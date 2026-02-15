@@ -19,6 +19,16 @@ from src.schemas import (
     AddTopicResponse,
     RemoveTopicResponse,
     IngestResponse,
+    DatasetGenerateRequest,
+    DatasetListResponse,
+    DatasetGenerateResponse,
+    DatasetInfo,
+    EvalRunRequest,
+    EvalRunResponse,
+    EvalResultsListResponse,
+    EvalResultInfo,
+    EvalSummaryResponse,
+    EvalReportResponse,
 )
 
 from src.schemas import STRATEGY_INFO
@@ -327,6 +337,209 @@ async def full_reingest():
             message=result.get("message", "Unknown error"),
             document_count=result.get("document_count")
         )
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Evaluation Endpoints ====================
+
+@router.post("/eval/dataset/generate", response_model=DatasetGenerateResponse)
+async def generate_eval_dataset(request: DatasetGenerateRequest):
+    """Generate an evaluation dataset from indexed topics."""
+    try:
+        from src.evaluation.dataset import DatasetGenerator
+
+        generator = DatasetGenerator()
+        dataset = generator.generate_dataset(
+            name=request.name,
+            questions_per_topic=request.questions_per_topic,
+            question_types=request.question_types
+        )
+
+        return DatasetGenerateResponse(
+            success=True,
+            name=dataset.name,
+            question_count=len(dataset.questions),
+            topics_covered=dataset.topics_covered,
+            message=f"Generated {len(dataset.questions)} questions across {len(dataset.topics_covered)} topics"
+        )
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/eval/datasets", response_model=DatasetListResponse)
+async def list_eval_datasets():
+    """List available evaluation datasets."""
+    try:
+        from src.evaluation.dataset import DatasetGenerator
+
+        generator = DatasetGenerator()
+        datasets = generator.list_datasets()
+
+        return DatasetListResponse(
+            datasets=[DatasetInfo(**d) for d in datasets],
+            total=len(datasets)
+        )
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/eval/datasets/{name}")
+async def delete_eval_dataset(name: str):
+    """Delete an evaluation dataset."""
+    try:
+        from src.evaluation.dataset import DatasetGenerator
+
+        generator = DatasetGenerator()
+        success = generator.delete_dataset(name)
+
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Dataset '{name}' not found")
+
+        return {"success": True, "message": f"Dataset '{name}' deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/eval/run", response_model=EvalRunResponse)
+async def run_evaluation(request: EvalRunRequest):
+    """Run evaluation on a dataset."""
+    try:
+        from src.evaluation.dataset import DatasetGenerator
+        from src.evaluation.runner import EvaluationRunner
+
+        # Load dataset
+        generator = DatasetGenerator()
+        dataset = generator.load_dataset(request.dataset_name)
+
+        if not dataset:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Dataset '{request.dataset_name}' not found"
+            )
+
+        # Run evaluation
+        runner = EvaluationRunner()
+        results = runner.run_evaluation(
+            dataset=dataset,
+            experiment_name=request.experiment_name
+        )
+
+        return EvalRunResponse(
+            success=True,
+            run_id=results.run_id,
+            dataset_name=results.dataset_name,
+            total_questions=results.total_questions,
+            successful_questions=results.successful_questions,
+            failed_questions=results.failed_questions,
+            total_time_seconds=results.total_time_seconds,
+            message=f"Evaluation complete. {results.successful_questions}/{results.total_questions} questions successful."
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/eval/results", response_model=EvalResultsListResponse)
+async def list_eval_results():
+    """List available evaluation results."""
+    try:
+        from src.evaluation.runner import EvaluationRunner
+
+        runner = EvaluationRunner()
+        results = runner.list_results()
+
+        return EvalResultsListResponse(
+            results=[EvalResultInfo(**r) for r in results],
+            total=len(results)
+        )
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/eval/results/{run_id}", response_model=EvalSummaryResponse)
+async def get_eval_results(run_id: str):
+    """Get summary of evaluation results."""
+    try:
+        from src.evaluation.runner import EvaluationRunner, get_evaluation_summary
+
+        runner = EvaluationRunner()
+        results = runner.load_results(run_id)
+
+        if not results:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Results for run '{run_id}' not found"
+            )
+
+        summary = get_evaluation_summary(results)
+        return EvalSummaryResponse(**summary)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/eval/results/{run_id}/report", response_model=EvalReportResponse)
+async def generate_eval_report(run_id: str):
+    """Generate HTML report for evaluation results."""
+    try:
+        from src.evaluation.runner import EvaluationRunner
+        from src.evaluation.dashboard import ReportGenerator
+
+        runner = EvaluationRunner()
+        results = runner.load_results(run_id)
+
+        if not results:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Results for run '{run_id}' not found"
+            )
+
+        report_gen = ReportGenerator()
+        report_path = report_gen.generate_html_report(results)
+
+        return EvalReportResponse(
+            success=True,
+            run_id=run_id,
+            report_path=report_path,
+            message=f"Report generated at {report_path}"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/eval/results/{run_id}")
+async def delete_eval_results(run_id: str):
+    """Delete evaluation results."""
+    try:
+        from src.evaluation.runner import EvaluationRunner
+
+        runner = EvaluationRunner()
+        success = runner.delete_results(run_id)
+
+        if not success:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Results for run '{run_id}' not found"
+            )
+
+        return {"success": True, "message": f"Results '{run_id}' deleted"}
+    except HTTPException:
+        raise
     except Exception as e:
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
