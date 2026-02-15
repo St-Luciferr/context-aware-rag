@@ -281,3 +281,41 @@ class EvalCompareRequest(BaseModel):
         max_length=5,
         description="List of run IDs to compare"
     )
+
+
+# ==================== Tool Calling Schemas ====================
+
+class ToolInfo(BaseModel):
+    """Information about an available tool."""
+    name: str
+    description: str
+    enabled: bool
+
+
+class ToolsListResponse(BaseModel):
+    """Response containing available tools."""
+    tools: list[ToolInfo]
+    total: int
+    tool_calling_enabled: bool
+
+
+class ToolsStatusResponse(BaseModel):
+    """Response containing tool calling configuration status."""
+    enabled: bool
+    max_iterations: int
+    enabled_tools: list[str]
+    web_search_provider: str
+
+
+class ToolToggleRequest(BaseModel):
+    """Request to enable/disable a specific tool."""
+    tool_name: str
+    enabled: bool
+
+
+class ToolToggleResponse(BaseModel):
+    """Response after toggling a tool."""
+    success: bool
+    tool_name: str
+    enabled: bool
+    message: str

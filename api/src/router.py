@@ -29,6 +29,9 @@ from src.schemas import (
     EvalResultInfo,
     EvalSummaryResponse,
     EvalReportResponse,
+    ToolInfo,
+    ToolsListResponse,
+    ToolsStatusResponse,
 )
 
 from src.schemas import STRATEGY_INFO
@@ -543,3 +546,42 @@ async def delete_eval_results(run_id: str):
     except Exception as e:
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Tool Calling Endpoints ====================
+
+@router.get("/tools", response_model=ToolsListResponse)
+async def list_tools():
+    """List all available LLM tools with their status."""
+    try:
+        from src.tools import get_registry
+
+        registry = get_registry()
+        tools = registry.list_tools()
+
+        return ToolsListResponse(
+            tools=[ToolInfo(**t) for t in tools],
+            total=len(tools),
+            tool_calling_enabled=settings.tools.enabled
+        )
+    except ImportError:
+        # Tools package not loaded
+        return ToolsListResponse(
+            tools=[],
+            total=0,
+            tool_calling_enabled=settings.tools.enabled
+        )
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/tools/status", response_model=ToolsStatusResponse)
+async def get_tools_status():
+    """Get tool calling configuration status."""
+    return ToolsStatusResponse(
+        enabled=settings.tools.enabled,
+        max_iterations=settings.tools.max_iterations,
+        enabled_tools=settings.tools.enabled_tools_list,
+        web_search_provider=settings.tools.web_search_provider
+    )
