@@ -166,6 +166,66 @@ class LangSmithSettings(BaseSettings):
         return self.enabled and bool(self.api_key)
 
 
+class EvaluationSettings(BaseSettings):
+    """Evaluation pipeline configuration."""
+
+    # Dataset generation
+    questions_per_topic: int = Field(
+        default=5,
+        ge=1,
+        le=50,
+        alias="EVAL_QUESTIONS_PER_TOPIC",
+        description="Number of questions to generate per topic"
+    )
+    default_question_types: list[str] = Field(
+        default=["factual", "comparative", "explanatory"],
+        alias="EVAL_QUESTION_TYPES",
+        description="Types of questions to generate"
+    )
+
+    # Retrieval evaluation
+    retrieval_k_values: list[int] = Field(
+        default=[1, 3, 5, 10],
+        alias="EVAL_RETRIEVAL_K_VALUES",
+        description="K values for Precision@K and Recall@K"
+    )
+
+    # Generation evaluation thresholds
+    faithfulness_threshold: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        alias="EVAL_FAITHFULNESS_THRESHOLD"
+    )
+    relevance_threshold: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        alias="EVAL_RELEVANCE_THRESHOLD"
+    )
+
+    # Persistence directories
+    datasets_dir: str = Field(
+        default="data/eval_datasets",
+        alias="EVAL_DATASETS_DIR"
+    )
+    results_dir: str = Field(
+        default="data/eval_results",
+        alias="EVAL_RESULTS_DIR"
+    )
+    reports_dir: str = Field(
+        default="data/eval_reports",
+        alias="EVAL_REPORTS_DIR"
+    )
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+
 class Settings(BaseSettings):
     """Main settings class combining all configuration sections."""
 
@@ -184,6 +244,7 @@ class Settings(BaseSettings):
     api: APISettings = Field(default_factory=APISettings)
     history: HistorySettings = Field(default_factory=HistorySettings)
     langsmith: LangSmithSettings = Field(default_factory=LangSmithSettings)
+    evaluation: EvaluationSettings = Field(default_factory=EvaluationSettings)
     env: str = Field(default='dev', alias="ENV")
     workers: int = Field(default=1, alias="WORKERS")
 
