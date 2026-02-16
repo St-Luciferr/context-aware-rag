@@ -57,7 +57,10 @@ class SerpAPIProvider(WebSearchProvider):
 
     def search(self, query: str, max_results: int = 5) -> List[Dict[str, str]]:
         try:
-            from serpapi import GoogleSearch
+
+            from serpapi import (  # pyright: ignore[reportMissingImports]
+                GoogleSearch
+            )
 
             params = {
                 "q": query,
@@ -94,8 +97,10 @@ class TavilyProvider(WebSearchProvider):
 
     def search(self, query: str, max_results: int = 5) -> List[Dict[str, str]]:
         try:
-            from tavily import TavilyClient
 
+            from tavily import (  # pyright: ignore[reportMissingImports]
+                TavilyClient
+            )
             client = TavilyClient(api_key=self.api_key)
             response = client.search(query, max_results=max_results)
 
@@ -157,7 +162,8 @@ def web_search(query: str, max_results: int = 5) -> str:
     """
     try:
         # Clamp max_results to valid range
-        max_results = max(1, min(settings.tools.web_search_max_results, max_results))
+        max_results = max(
+            1, min(settings.tools.web_search_max_results, max_results))
 
         provider = get_search_provider()
         results = provider.search(query, max_results)
@@ -215,8 +221,10 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Test web_search tool")
     parser.add_argument("query", help="Search query")
-    parser.add_argument("-n", "--max-results", type=int, default=5, help="Max results (default: 5)")
-    parser.add_argument("-p", "--provider", default="duckduckgo", help="Provider: duckduckgo, serpapi, tavily")
+    parser.add_argument("-n", "--max-results", type=int,
+                        default=5, help="Max results (default: 5)")
+    parser.add_argument("-p", "--provider", default="duckduckgo",
+                        help="Provider: duckduckgo, serpapi, tavily")
     args = parser.parse_args()
 
     print(f"Provider: {args.provider}")
@@ -224,5 +232,6 @@ if __name__ == "__main__":
     print(f"Max results: {args.max_results}")
     print("-" * 40)
 
-    result = web_search.invoke({"query": args.query, "max_results": args.max_results})
+    result = web_search.invoke(
+        {"query": args.query, "max_results": args.max_results})
     print(result)
