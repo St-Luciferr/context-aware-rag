@@ -188,9 +188,10 @@ class ReportGenerator:
         precision = ret.get("precision_at_k", {})
         recall = ret.get("recall_at_k", {})
 
+        # Keys may be strings after JSON serialization
         k_values = sorted([int(k) for k in precision.keys()])
-        p_values = [precision.get(k, {}).get("mean", 0) for k in k_values]
-        r_values = [recall.get(k, {}).get("mean", 0) for k in k_values]
+        p_values = [precision.get(k, {}).get("mean", 0) or precision.get(str(k), {}).get("mean", 0) for k in k_values]
+        r_values = [recall.get(k, {}).get("mean", 0) or recall.get(str(k), {}).get("mean", 0) for k in k_values]
 
         fig = go.Figure()
         fig.add_trace(go.Scatter(
@@ -232,27 +233,27 @@ class ReportGenerator:
             faithfulness = gen.get("faithfulness", {}).get("score", "N/A")
             relevance = gen.get("answer_relevance", {}).get("score", "N/A")
             correctness = gen.get("answer_correctness", {}).get("score", "N/A")
+            ctx_precision = gen.get("context_precision", {}).get("score", "N/A")
             mrr = ret.get("mrr", "N/A")
+            hit_rate = ret.get("hit_rate", "N/A")
+            ctx_relevance = ret.get("context_relevance", "N/A")
 
             # Format scores
-            if isinstance(faithfulness, float):
-                faithfulness = f"{faithfulness:.2f}"
-            if isinstance(relevance, float):
-                relevance = f"{relevance:.2f}"
-            if isinstance(correctness, float):
-                correctness = f"{correctness:.2f}"
-            if isinstance(mrr, float):
-                mrr = f"{mrr:.2f}"
+            def fmt(val):
+                return f"{val:.2f}" if isinstance(val, (int, float)) else val
 
             rows.append(f"""
             <tr>
                 <td>{i+1}</td>
                 <td title="{q.question}">{q.question[:50]}...</td>
                 <td><span class="badge badge-{q.question_type}">{q.question_type}</span></td>
-                <td>{faithfulness}</td>
-                <td>{relevance}</td>
-                <td>{correctness}</td>
-                <td>{mrr}</td>
+                <td>{fmt(faithfulness)}</td>
+                <td>{fmt(relevance)}</td>
+                <td>{fmt(correctness)}</td>
+                <td>{fmt(ctx_precision)}</td>
+                <td>{fmt(mrr)}</td>
+                <td>{fmt(hit_rate)}</td>
+                <td>{fmt(ctx_relevance)}</td>
                 <td>{q.total_time_ms:.0f}ms</td>
             </tr>
             """)
@@ -264,10 +265,13 @@ class ReportGenerator:
                     <th>#</th>
                     <th>Question</th>
                     <th>Type</th>
-                    <th>Faithfulness</th>
+                    <th>Faithful</th>
                     <th>Relevance</th>
-                    <th>Correctness</th>
+                    <th>Correct</th>
+                    <th>Ctx Prec</th>
                     <th>MRR</th>
+                    <th>Hit Rate</th>
+                    <th>Ctx Rel</th>
                     <th>Time</th>
                 </tr>
             </thead>
