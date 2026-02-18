@@ -118,6 +118,7 @@ Respond in exactly this JSON format:
                 model=settings.ollama.model,
                 base_url=settings.ollama.base_url,
                 temperature=0.1,  # Low temperature for consistent evaluation
+                format="json",  # Force valid JSON output
                 client_kwargs=client_kwargs
             )
         self.embeddings = embeddings or self._init_embeddings()
@@ -131,7 +132,7 @@ Respond in exactly this JSON format:
         )
 
     def _parse_llm_json(self, response: str) -> Optional[dict]:
-        """Parse JSON from LLM response, handling markdown code blocks."""
+        """Parse JSON from LLM response, handling markdown code blocks and comments."""
         content = response.strip()
 
         # Handle markdown code blocks
@@ -140,16 +141,40 @@ Respond in exactly this JSON format:
         elif "```" in content:
             content = content.split("```")[1].split("```")[0].strip()
 
+        # Remove JavaScript-style comments (// ...) that LLMs sometimes add
+        content = re.sub(r'//[^\n]*', '', content)
+        # Remove trailing commas before ] or } (common LLM mistake)
+        content = re.sub(r',(\s*[}\]])', r'\1', content)
+
         try:
             return json.loads(content)
         except json.JSONDecodeError:
-            # Try to extract JSON-like content
-            match = re.search(r'\{[^{}]*"score"[^{}]*\}', content)
-            if match:
-                try:
-                    return json.loads(match.group())
-                except json.JSONDecodeError:
-                    pass
+            # Try to extract just the score if full parsing fails
+            score_match = re.search(r'"score"\s*:\s*([\d.]+)', content)
+            if score_match:
+                score = float(score_match.group(1))
+                # Try to extract reasoning if present
+                reasoning_match = re.search(r'"reasoning"\s*:\s*"([^"]*(?:"[^"]*)*)"', content, re.DOTALL)
+                reasoning = reasoning_match.group(1) if reasoning_match else ""
+                # Try to extract other fields
+                result = {"score": score}
+                if reasoning:
+                    result["reasoning"] = reasoning.replace('\n', ' ').strip()
+                # Check for useful array (context_precision)
+                useful_match = re.search(r'"useful"\s*:\s*\[(.*?)\]', content, re.DOTALL)
+                if useful_match:
+                    useful_str = useful_match.group(1).lower()
+                    result["useful"] = [x.strip() == 'true' for x in re.findall(r'true|false', useful_str)]
+                # Check for claims/supported arrays (faithfulness)
+                claims_match = re.search(r'"claims"\s*:\s*\[(.*?)\]', content, re.DOTALL)
+                supported_match = re.search(r'"supported"\s*:\s*\[(.*?)\]', content, re.DOTALL)
+                if claims_match:
+                    claims = re.findall(r'"([^"]*)"', claims_match.group(1))
+                    result["claims"] = claims
+                if supported_match:
+                    supported_str = supported_match.group(1).lower()
+                    result["supported"] = [x.strip() == 'true' for x in re.findall(r'true|false', supported_str)]
+                return result
             logger.warning(f"Failed to parse LLM JSON response: {content[:200]}")
             return None
 
@@ -169,7 +194,7 @@ Respond in exactly this JSON format:
         """
         try:
             prompt = self.FAITHFULNESS_PROMPT.format(
-                context=context[:4000],  # Limit context length
+                context=context,
                 answer=answer
             )
             response = self.llm.invoke(prompt)
@@ -181,6 +206,8 @@ Respond in exactly this JSON format:
                     "claims": result.get("claims", []),
                     "supported": result.get("supported", [])
                 }
+            else:
+                logger.warning(f"LLM response missing faithfulness 'score': {response.content}")
         except Exception as e:
             logger.error(f"Error calculating faithfulness: {e}")
 
@@ -213,6 +240,8 @@ Respond in exactly this JSON format:
                     "score": float(result["score"]),
                     "reasoning": result.get("reasoning", "")
                 }
+            else:
+                logger.warning(f"LLM response missing answer relevance 'score': {response.content}")
         except Exception as e:
             logger.error(f"Error calculating answer relevance: {e}")
 
@@ -240,7 +269,7 @@ Respond in exactly this JSON format:
         try:
             # Format contexts with numbers
             contexts_str = "\n\n".join(
-                f"[Chunk {i+1}]: {ctx[:1000]}"
+                f"[Chunk {i+1}]: {ctx}"
                 for i, ctx in enumerate(contexts)
             )
 
@@ -257,6 +286,8 @@ Respond in exactly this JSON format:
                     "score": float(result["score"]),
                     "useful": result.get("useful", [])
                 }
+            else:
+                logger.warning(f"LLM response missing content precision 'score': {response.content}")
         except Exception as e:
             logger.error(f"Error calculating context precision: {e}")
 
@@ -292,6 +323,8 @@ Respond in exactly this JSON format:
                     "score": float(result["score"]),
                     "reasoning": result.get("reasoning", "")
                 }
+            else:
+                logger.warning(f"LLM response missing answer correctness 'score': {response.content}")
         except Exception as e:
             logger.error(f"Error calculating answer correctness: {e}")
 
