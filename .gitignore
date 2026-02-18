@@ -20,3 +20,4 @@ chroma_db/
 data/
 *test.py
 *.pptx
+docs/
