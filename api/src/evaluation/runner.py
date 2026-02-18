@@ -112,8 +112,11 @@ class EvaluationRunner:
         doc_ids = []
         contexts = []
         for doc in docs:
-            doc_id = doc.metadata.get("chunk_id") or doc.metadata.get("id", "")
-            doc_ids.append(str(doc_id))  # Ensure string type
+            chunk_id = doc.metadata.get("chunk_id", "")
+            title = doc.metadata.get("title", "")
+            # Use title:chunk_id format to match ground truth IDs
+            doc_id = f"{title}:{chunk_id}" if title and chunk_id != "" else str(chunk_id)
+            doc_ids.append(doc_id)
             contexts.append(doc.page_content)
 
         return doc_ids, contexts, elapsed_ms
@@ -388,8 +391,9 @@ def get_evaluation_summary(results: EvalResults) -> dict:
         }
         # Add precision/recall at common K values
         for k in [1, 3, 5]:
-            p_at_k = ret.get("precision_at_k", {}).get(k, {})
-            r_at_k = ret.get("recall_at_k", {}).get(k, {})
+            # Keys may be strings after JSON serialization
+            p_at_k = ret.get("precision_at_k", {}).get(k) or ret.get("precision_at_k", {}).get(str(k), {})
+            r_at_k = ret.get("recall_at_k", {}).get(k) or ret.get("recall_at_k", {}).get(str(k), {})
             if p_at_k:
                 summary["retrieval"][f"precision@{k}"] = round(
                     p_at_k.get("mean", 0), 3

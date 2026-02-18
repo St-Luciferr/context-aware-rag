@@ -167,6 +167,7 @@ class RetrievalMetrics:
             return 0.0
 
         try:
+            logger.info(f"Calculating context relevance for query: ")
             # Get query embedding
             query_embedding = self.embeddings.embed_query(query)
 
@@ -234,11 +235,11 @@ class RetrievalMetrics:
         if k_values is None:
             k_values = settings.evaluation.retrieval_k_values
 
-        # Extract document IDs from metadata
+        # Extract document IDs from metadata ( in title:chunk_id format from runner)
         retrieved_ids = []
         for doc in retrieved_docs:
             doc_id = doc.metadata.get("chunk_id") or doc.metadata.get("id", "")
-            retrieved_ids.append(doc_id)
+            retrieved_ids.append(str(doc_id))
 
         metrics = {
             "mrr": self.mean_reciprocal_rank(retrieved_ids, ground_truth_ids),

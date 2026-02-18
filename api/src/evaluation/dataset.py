@@ -35,7 +35,8 @@ class EvalQuestion(BaseModel):
 class EvalDataset(BaseModel):
     """A collection of evaluation questions."""
     name: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc))
     questions: list[EvalQuestion] = Field(default_factory=list)
     topics_covered: list[str] = Field(default_factory=list)
     metadata: dict = Field(default_factory=dict)
@@ -94,9 +95,12 @@ Respond in exactly this JSON format:
 
     def _ensure_dirs(self):
         """Ensure evaluation directories exist."""
-        Path(settings.evaluation.datasets_dir).mkdir(parents=True, exist_ok=True)
-        Path(settings.evaluation.results_dir).mkdir(parents=True, exist_ok=True)
-        Path(settings.evaluation.reports_dir).mkdir(parents=True, exist_ok=True)
+        Path(settings.evaluation.datasets_dir).mkdir(
+            parents=True, exist_ok=True)
+        Path(settings.evaluation.results_dir).mkdir(
+            parents=True, exist_ok=True)
+        Path(settings.evaluation.reports_dir).mkdir(
+            parents=True, exist_ok=True)
 
     def _get_chunks_by_topic(self) -> dict[str, list[dict]]:
         """Get all chunks from ChromaDB grouped by topic."""
@@ -121,17 +125,19 @@ Respond in exactly this JSON format:
 
             documents = results.get("documents", [])
             metadatas = results.get("metadatas", [])
-            ids = results.get("ids", [])
 
             # Group by topic
             chunks_by_topic: dict[str, list[dict]] = {}
-            for i, (doc, meta, chunk_id) in enumerate(zip(documents, metadatas, ids)):
+            for doc, meta in zip(documents, metadatas):
                 if meta and "title" in meta:
                     title = meta["title"]
                     if title not in chunks_by_topic:
                         chunks_by_topic[title] = []
+                    # Use title:chunk_id for unique identifier matching retrieval path
+                    meta_chunk_id = meta.get("chunk_id", len(chunks_by_topic[title]))
+                    unique_id = f"{title}:{meta_chunk_id}"
                     chunks_by_topic[title].append({
-                        "id": chunk_id,
+                        "id": unique_id,
                         "content": doc,
                         "metadata": meta
                     })
@@ -302,7 +308,7 @@ Respond in exactly this JSON format:
             question_types = settings.evaluation.default_question_types
 
         logger.info(f"Generating dataset '{name}' with {questions_per_topic} "
-                   f"questions per topic, types: {question_types}")
+                    f"questions per topic, types: {question_types}")
 
         chunks_by_topic = self._get_chunks_by_topic()
         if not chunks_by_topic:
@@ -330,7 +336,8 @@ Respond in exactly this JSON format:
                     topic, chunks, questions_per_type
                 )
                 all_questions.extend(explanatory_qs)
-                logger.info(f"  Generated {len(explanatory_qs)} explanatory questions")
+                logger.info(
+                    f"  Generated {len(explanatory_qs)} explanatory questions")
 
         # Generate comparative questions across all topics
         if "comparative" in question_types and len(chunks_by_topic) >= 2:
@@ -338,7 +345,8 @@ Respond in exactly this JSON format:
                 chunks_by_topic, count=min(3, len(chunks_by_topic) - 1)
             )
             all_questions.extend(comparative_qs)
-            logger.info(f"Generated {len(comparative_qs)} comparative questions")
+            logger.info(
+                f"Generated {len(comparative_qs)} comparative questions")
 
         dataset = EvalDataset(
             name=name,
@@ -354,13 +362,15 @@ Respond in exactly this JSON format:
 
         # Save dataset
         self.save_dataset(dataset)
-        logger.info(f"Dataset '{name}' generated with {len(all_questions)} questions")
+        logger.info(
+            f"Dataset '{name}' generated with {len(all_questions)} questions")
 
         return dataset
 
     def save_dataset(self, dataset: EvalDataset) -> Path:
         """Save dataset to JSON file."""
-        filepath = Path(settings.evaluation.datasets_dir) / f"{dataset.name}.json"
+        filepath = Path(settings.evaluation.datasets_dir) / \
+            f"{dataset.name}.json"
         with open(filepath, "w") as f:
             f.write(dataset.model_dump_json(indent=2))
         logger.info(f"Dataset saved to {filepath}")
