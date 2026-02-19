@@ -1,4 +1,3 @@
-# graph.py
 """
 LangGraph-based Context-Aware Chatbot
 Implements a stateful conversation graph with RAG capabilities
@@ -48,7 +47,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-DEBUG = False
 PREVIEW_CHARS = 200       # how many chars for content_preview in the citations
 
 
@@ -150,7 +148,8 @@ class RAGChatbot:
             from src.tools import get_enabled_tools
             tools = get_enabled_tools()
             if tools:
-                logger.info(f"Binding {len(tools)} tools to LLM: {[t.name for t in tools]}")
+                logger.info(
+                    f"Binding {len(tools)} tools to LLM: {[t.name for t in tools]}")
                 return llm.bind_tools(tools)
             else:
                 logger.warning("Tool calling enabled but no tools found")
@@ -280,9 +279,11 @@ class RAGChatbot:
             }
         else:
             # Skip AutoCut - MMR already provides diversity
-            docs = raw_docs[:settings.rag.distilled_retrieval_k]  # Just take top-k
+            # Just take top-k
+            docs = raw_docs[:settings.rag.distilled_retrieval_k]
             autocut_input = {}
-            autocut_output = {"skipped": True, "reason": "AUTOCUT_ENABLED=false"}
+            autocut_output = {"skipped": True,
+                              "reason": "AUTOCUT_ENABLED=false"}
 
         # Add trace metadata if LangSmith is available
         if LANGSMITH_AVAILABLE:
@@ -347,7 +348,8 @@ class RAGChatbot:
         context = "\n\n".join(context_parts)
 
         autocut_status = f"-> {len(docs)}" if settings.rag.autocut_enabled else "(no autocut)"
-        print(f"[Retrieval] {len(raw_docs)} docs {autocut_status} ({time.time()-start_time:.2f}s)")
+        print(
+            f"[Retrieval] {len(raw_docs)} docs {autocut_status} ({time.time()-start_time:.2f}s)")
 
         return {
             "context": context,
@@ -490,7 +492,8 @@ You are an AI assistant that provides accurate, factual information. You MUST NO
 
                 if not content and not has_tool_calls:
                     # Skip empty AIMessages
-                    logger.warning("Skipping empty AIMessage without content or tool_calls")
+                    logger.warning(
+                        "Skipping empty AIMessage without content or tool_calls")
                     logger.debug(f"Invalid AIMessage: {msg}")
                     continue
 
@@ -658,7 +661,8 @@ You are an AI research assistant specialized in Artificial Intelligence and Mach
             messages=full_history,
             current_query=user_message
         )
-        print(f"[History] {len(full_history)} msgs -> {len(optimized_history)} optimized ({time.time()-start_time:.2f}s)")
+        print(
+            f"[History] {len(full_history)} msgs -> {len(optimized_history)} optimized ({time.time()-start_time:.2f}s)")
 
         # Prepare initial state
         initial_state: ChatState = {
