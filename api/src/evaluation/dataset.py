@@ -5,6 +5,7 @@ Generates Q&A pairs from indexed Wikipedia content for RAG evaluation.
 """
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -154,17 +155,34 @@ Respond in exactly this JSON format:
             response = self.llm.invoke(prompt)
             content = response.content.strip()
 
-            # Try to parse JSON from response
-            # Handle potential markdown code blocks
+            # Handle markdown code blocks
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
 
-            return json.loads(content)
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse LLM response as JSON: {e}")
-            return None
+            # Remove JavaScript-style comments (// ...) that LLMs sometimes add
+            content = re.sub(r'//[^\n]*', '', content)
+            # Remove trailing commas before ] or } (common LLM mistake)
+            content = re.sub(r',(\s*[}\]])', r'\1', content)
+
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                # Fallback: try to extract question and answer with regex
+                question_match = re.search(
+                    r'"question"\s*:\s*"((?:[^"\\]|\\.)*)?"', content, re.DOTALL)
+                answer_match = re.search(
+                    r'"answer"\s*:\s*"((?:[^"\\]|\\.)*)?"', content, re.DOTALL)
+
+                if question_match and answer_match:
+                    return {
+                        "question": question_match.group(1).replace('\\n', ' ').replace('\\"', '"'),
+                        "answer": answer_match.group(1).replace('\\n', ' ').replace('\\"', '"')
+                    }
+
+                logger.info(f"Parsed LLM response with regex: {content[:200]}")
+                return None
         except Exception as e:
             logger.error(f"Error generating Q&A: {e}")
             return None
